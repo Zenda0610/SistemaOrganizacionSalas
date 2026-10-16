@@ -115,8 +115,8 @@ async function cargarGrilla() {
   mostrarEstado("grilla", "cargando", "Cargando grilla…");
   const selector = document.getElementById("selector-fecha");
   if (!selector.options.length) {
-    const todas = await pedir("/sesiones");
-    const fechas = [...new Set(todas.map((s) => s.fecha))].sort();
+    const [todas, reservas] = await Promise.all([pedir("/sesiones"), pedir("/reservas")]);
+    const fechas = [...new Set([...todas.map((s) => s.fecha), ...reservas.flatMap(fechasDeReserva)])].sort();
     if (!fechas.length) {
       mostrarEstado("grilla", "vacio", "No hay sesiones cargadas. Recargue los datos desde la pestaña Calidad de datos.");
       document.getElementById("tabla-grilla").replaceChildren();
@@ -130,12 +130,15 @@ async function cargarGrilla() {
 }
 
 async function cargarDia(fecha) {
-  const [espacios, sesiones] = await Promise.all([pedir("/espacios"), pedir(`/sesiones?fecha=${fecha}`)]);
+  const [espacios, sesiones, reservas] = await Promise.all([
+    pedir("/espacios"), pedir(`/sesiones?fecha=${fecha}`), pedir(`/reservas?fecha=${fecha}`),
+  ]);
   if (!espacios.length) {
     mostrarEstado("grilla", "vacio", "No hay espacios cargados.");
     return;
   }
   construirGrilla(espacios, sesiones);
+  pintarReservas(espacios, reservas);
   mostrarEstado("grilla", sesiones.length ? "ok" : "vacio",
     sesiones.length ? "" : `No hay sesiones programadas para ${fecha}.`);
 }
@@ -187,6 +190,29 @@ function crearBloque(sesion, enConflicto) {
   const franjas = (minutosDesdeHora(sesion.hora_fin) - minutosDesdeHora(sesion.hora_inicio)) / PASO_MINUTOS;
   bloque.style.height = `${franjas * 22 - 2}px`;  // 22 px es la altura de una franja en styles.css
   return bloque;
+}
+
+// Días que ocupa una reserva. Un intervalo que cruza medianoche ocupa dos días;
+// uno que termina exactamente a las 00:00 no ocupa el día siguiente.
+function fechasDeReserva(reserva) {
+  const fechas = [reserva.inicio.slice(0, 10)];
+  if (!reserva.fin.endsWith(" 00:00")) fechas.push(reserva.fin.slice(0, 10));
+  return fechas;
+}
+
+function pintarReservas(espacios, reservas) {
+  const contenedor = document.getElementById("reservas-aprobadas");
+  if (!reservas.length) {
+    contenedor.replaceChildren(crearElemento("p", "estado", "No hay reservas aprobadas para este día."));
+    return;
+  }
+  const nombres = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
+  contenedor.replaceChildren(crearTabla([
+    { titulo: "Espacio", valor: (r) => nombres[r.espacio_id] || r.espacio_id },
+    { titulo: "Desde", valor: (r) => r.inicio },
+    { titulo: "Hasta", valor: (r) => r.fin },
+    { titulo: "Tipo", valor: (r) => (r.tipo === "comercial" ? "Comercial (pago no verificado por el sistema)" : "Académica") },
+  ], reservas));
 }
 
 function pintarLeyenda() {

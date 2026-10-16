@@ -159,6 +159,18 @@ const casos = [
       console.log("FAIL -", caso.nombre, "\n     ", error.message.split("\n")[0], "\n      banner:", interfaz.banner());
     }
   }
+  // Días ocupados por una reserva: medianoche cuenta como dos días; 00:00 final no ocupa el siguiente.
+  const auxiliares = cargarInterfaz(() => respuestaJson(200, {}));
+  const dias = vm.runInContext(
+    'JSON.stringify([fechasDeReserva({inicio:"2026-10-20 22:00", fin:"2026-10-21 02:00"}), fechasDeReserva({inicio:"2026-10-20 22:00", fin:"2026-10-21 00:00"})])',
+    auxiliares.contexto);
+  try {
+    assert.deepStrictEqual(JSON.parse(dias), [["2026-10-20", "2026-10-21"], ["2026-10-20"]]);
+    console.log("ok   - una reserva que cruza medianoche ocupa dos días; a las 00:00 no ocupa el siguiente");
+  } catch (error) {
+    fallos += 1;
+    console.log("FAIL - días de reserva\n     ", error.message.split("\n")[0]);
+  }
   // La sesión muestra la identidad de desarrollo y el aviso de que no es autenticación.
   const sesion = cargarInterfaz(() => respuestaJson(200, {}));
   await vm.runInContext("cargarSesion()", sesion.contexto);

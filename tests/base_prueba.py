@@ -24,10 +24,10 @@ class BasePrueba(unittest.TestCase):
         db.inicializar_base()
         self.usar_identidad(None)
 
-    def usar_identidad(self, rol):
+    def usar_identidad(self, rol, usuario="dev-prueba"):
         """Fija la identidad de desarrollo del servidor para la prueba. None = sin identidad."""
         previa = (config.USUARIO_DESARROLLO, config.ROL_DESARROLLO)
-        config.USUARIO_DESARROLLO = "dev-prueba" if rol else ""
+        config.USUARIO_DESARROLLO = usuario if rol else ""
         config.ROL_DESARROLLO = rol or ""
         self.addCleanup(self._restaurar_identidad, previa)
 

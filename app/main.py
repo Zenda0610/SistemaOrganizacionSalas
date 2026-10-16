@@ -1,11 +1,11 @@
 """Arranque de FastAPI, rutas de la API y servicio de la interfaz estática."""
 import logging
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +14,10 @@ from starlette.exceptions import HTTPException as ErrorHTTP
 from app import carga_datos, db, ia
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
+from app import solicitudes
 from app.permisos import requerir_permiso
+from app.identidad import Identidad
+from app.solicitudes import ErrorSolicitud, NuevaSolicitud
 
 logger = logging.getLogger(__name__)
 RAIZ_STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -56,6 +59,11 @@ async def manejar_error_general(_request, error: Exception):
 
 @app.exception_handler(ErrorAcceso)
 async def manejar_error_acceso(_request, error: ErrorAcceso):
+    return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
+
+
+@app.exception_handler(ErrorSolicitud)
+async def manejar_error_solicitud(_request, error: ErrorSolicitud):
     return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
 
 
@@ -110,6 +118,36 @@ def listar_cohortes() -> list[dict]:
         cohorte = Cohorte(**{campo: fila[campo] for campo in CAMPOS_COHORTE})
         resultado.append({**cohorte.model_dump(mode="json"), "dias_restantes": cohorte.dias_restantes()})
     return resultado
+
+
+# --- Solicitudes y disponibilidad ----------------------------------------------
+
+@app.get("/api/disponibilidad")
+def consultar_disponibilidad(
+    inicio: datetime, fin: datetime, personas: Optional[int] = Query(default=None, ge=1)
+) -> list[dict]:
+    solicitudes.comprobar_intervalo(inicio, fin)
+    return solicitudes.espacios_disponibles(inicio, fin, personas)
+
+
+@app.get("/api/reservas")
+def listar_reservas(fecha: Optional[date] = None) -> list[dict]:
+    return solicitudes.listar_reservas(fecha)
+
+
+@app.get("/api/solicitudes")
+def listar_solicitudes(identidad: Identidad = Depends(identidad_actual)) -> list[dict]:
+    return solicitudes.listar_solicitudes(identidad)
+
+
+@app.post("/api/solicitudes", status_code=201)
+def crear_solicitud(datos: NuevaSolicitud, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return solicitudes.crear_solicitud(identidad, datos)
+
+
+@app.post("/api/solicitudes/{solicitud_id}/aprobar", dependencies=[requerir_permiso("autorizar_solicitud")])
+def aprobar_solicitud(solicitud_id: int, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return solicitudes.aprobar_solicitud(solicitud_id, identidad)
 
 
 @app.get("/api/calidad-datos")

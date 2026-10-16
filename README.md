@@ -7,6 +7,7 @@
 - **Fase 1:** completa. Base del proyecto, carga validada de datos ficticios, API de lectura, interfaz mínima y conexión de prueba a la IA.
 - **Fase 1, corrección de persistencia:** en revisión en la rama `fix/persistencia-carga`.
 - **Identidad y permisos (provisional):** en la rama `feat/identidad-permisos`. Identidad de desarrollo y matriz de permisos por rol. No es autenticación.
+- **Solicitudes de aulas (provisional):** en la rama `feat/solicitudes-aulas`. Disponibilidad, solicitud pendiente, aprobación validada y calendario de reservas. Sin pagos verificados.
 - **Fase 2:** pendiente. Reglas de negocio, reservas, préstamos, incidencias y triaje con IA.
 
 ## Problema
@@ -73,6 +74,23 @@ Matriz de permisos (en `app/permisos.py`):
 | `recargar_datos` | coordinadora |
 
 Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora puede autorizar sus propias solicitudes.
+
+## Solicitudes de aulas
+
+**Estado: provisional.** Usa la identidad de desarrollo de la sección anterior.
+
+- **Disponibilidad:** `GET /api/disponibilidad?inicio=AAAA-MM-DDTHH:MM&fin=AAAA-MM-DDTHH:MM` devuelve los espacios activos libres en ese intervalo. Acepta `personas` para filtrar por aforo.
+- **Horario:** 24/7. Un intervalo puede cruzar medianoche. Los intervalos son semiabiertos: 08:00–09:00 y 09:00–10:00 son compatibles. Las horas deben caer en bloques de `MINUTOS_BLOQUE` minutos y van sin zona horaria (hora local del centro).
+- **Crear:** `POST /api/solicitudes` con `espacio_id`, `inicio`, `fin`, `personas` y `descripcion`. El tipo lo decide el rol del servidor: profesor o administrativo genera una solicitud **académica**; estudiante o empresa, una **comercial**. Un cuerpo con `tipo`, `rol` o `solicitante_id` se rechaza con 422.
+- **Solicitud comercial:** queda con `requiere_pago = true` y `estado_pago = "pendiente"`. El sistema no cobra ni verifica pagos. No hay tarifas definidas.
+- **Aprobar:** `POST /api/solicitudes/{id}/aprobar`, solo para la coordinadora. La aprobación vuelve a validar, dentro de una transacción `BEGIN IMMEDIATE`, el estado del espacio, el aforo y los solapamientos con sesiones programadas y con reservas aprobadas. Dos aprobaciones simultáneas se ejecutan en serie. Nadie aprueba su propia solicitud.
+- **Listar:** `GET /api/solicitudes`. La coordinadora ve todas; los demás roles, solo las suyas.
+- **Calendario:** `GET /api/reservas?fecha=AAAA-MM-DD` devuelve las reservas aprobadas que ocupan ese día, sin datos del solicitante. La grilla muestra una lista de reservas del día, y su selector de fechas incluye los días de las reservas.
+- **Recargar datos:** no borra las reservas aprobadas. La tabla `solicitudes` no tiene llave foránea hacia `espacios` por esa razón.
+
+**Pendiente de definir:**
+- Reubicaciones, chat y flujo comercial completo (pago, tarifas, rechazo de solicitudes).
+- Regla de devolución: la devolución se exige cinco minutos antes del final, pero el aula sigue reservada hasta la hora final. Esta etapa aplica solo la reserva hasta la hora final. La devolución no está implementada.
 
 ## Instalación
 

@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS conflictos (
     referencia_relacionada TEXT,
     descripcion TEXT NOT NULL
 );
+-- espacio_id no tiene llave foránea: la recarga reemplaza la tabla espacios y no debe borrar reservas.
+CREATE TABLE IF NOT EXISTS solicitudes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    espacio_id TEXT NOT NULL,
+    inicio TEXT NOT NULL,
+    fin TEXT NOT NULL,
+    personas INTEGER NOT NULL CHECK (personas > 0),
+    descripcion TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('academica', 'comercial')),
+    solicitante_id TEXT NOT NULL,
+    rol_solicitante TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'aprobada')),
+    requiere_pago INTEGER NOT NULL,
+    estado_pago TEXT,
+    creada_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    decidida_por TEXT,
+    decidida_en TEXT,
+    CHECK (fin > inicio)
+);
 CREATE TABLE IF NOT EXISTS importaciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha_hora TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
