@@ -230,11 +230,15 @@ function construirGrilla(espacios, sesiones, reservas, fecha) {
   tabla.querySelector("thead").appendChild(cabecera);
 
   const cuerpo = crearElemento("tbody");
+  const celdas = new Map();
   for (let t = HORA_APERTURA * 60; t < HORA_CIERRE * 60; t += PASO_MINUTOS) {
     const fila = crearElemento("tr");
     fila.appendChild(crearElemento("td", "hora", t % 60 === 0 ? horaDesdeMinutos(t) : ""));
     espacios.forEach((e) => {
       const celda = crearElemento("td", "celda");
+      celda.setAttribute("data-espacio", e.id);
+      celda.setAttribute("data-minuto", String(t));
+      celdas.set(`${e.id}|${t}`, celda);
       bloques.filter((b) => b.espacioId === e.id && b.inicio === t)  // el bloque se dibuja en su primera franja
         .forEach((b) => celda.appendChild(crearBloque(b)));
       fila.appendChild(celda);
@@ -242,6 +246,8 @@ function construirGrilla(espacios, sesiones, reservas, fecha) {
     cuerpo.appendChild(fila);
   }
   tabla.appendChild(cuerpo);
+  // Selección por bloques (static/seleccion.js), si está cargada.
+  if (typeof prepararSeleccion === "function") prepararSeleccion(espacios, bloques, fecha, celdas);
 }
 
 function crearBloque(bloque) {

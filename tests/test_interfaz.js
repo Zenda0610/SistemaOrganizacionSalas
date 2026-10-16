@@ -264,7 +264,8 @@ const casos = [
   });
   // Render de la grilla con un DOM mínimo: 24 horas en franjas de 15 minutos y bloques de reserva.
   const nodo = (etiqueta) => ({
-    etiqueta, className: "", textContent: "", title: "", style: {}, hijos: [],
+    etiqueta, className: "", textContent: "", title: "", style: {}, hijos: [], atributos: {},
+    setAttribute(nombre, valor) { this.atributos[nombre] = valor; },
     appendChild(hijo) { this.hijos.push(hijo); return hijo; },
     replaceChildren(...nodos) { this.hijos = nodos; },
     querySelector(selector) { return this.hijos.find((h) => h.etiqueta === selector); },
@@ -733,6 +734,75 @@ const casos = [
     await primero;
     assert.strictEqual(envios, 1);
     assert.match(vista.elementos['#operaciones .estado'].textContent, /confirmada por el servidor/);
+  });
+  // Selección de bloques en el calendario (static/seleccion.js).
+  const vistaSeleccion = async (rol, respuestaPost) => {
+    const vista = cargarInterfaz(respuestaPost || (() => respuestaJson(201, { id: 41, estado: 'pendiente' })));
+    const base = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones = {}) => (url === '/api/sesion' && !opciones.method
+      ? respuestaJson(200, { usuario_id: `dev-${rol}`, rol }) : base(url, opciones));
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'static', 'seleccion.js'), 'utf8'), vista.contexto);
+    await new Promise(setImmediate);
+    return vista;
+  };
+  const enJs = (vista, codigo) => JSON.parse(vm.runInContext(`JSON.stringify(${codigo})`, vista.contexto) ?? 'null');
+  const vistaPura = await vistaSeleccion('profesor');
+  vm.runInContext("var ocupadasPrueba = new Set(['E01|480'])", vistaPura.contexto);
+  prueba('selección: una franja ocupada no se puede marcar', () => {
+    assert.strictEqual(enJs(vistaPura, "nuevaSeleccion(null, 'E01', 480, ocupadasPrueba)"), null);
+  });
+  prueba('selección: no salta sobre una franja ocupada ni cambia de sala al extender', () => {
+    const inicio = enJs(vistaPura, "nuevaSeleccion(null, 'E01', 450, ocupadasPrueba)");
+    assert.deepStrictEqual(inicio, { espacioId: 'E01', ancla: 450, inicio: 450, fin: 465 });
+    assert.deepStrictEqual(enJs(vistaPura, `nuevaSeleccion(${JSON.stringify(inicio)}, 'E01', 510, ocupadasPrueba)`), inicio);
+    assert.strictEqual(enJs(vistaPura, `nuevaSeleccion(${JSON.stringify(inicio)}, 'E02', 510, ocupadasPrueba)`).ancla, 510);
+  });
+  prueba('selección: arma inicio y fin correctos, también hacia atrás y hasta medianoche', () => {
+    const desde = enJs(vistaPura, "nuevaSeleccion(null, 'E01', 645, ocupadasPrueba)");
+    const hacia = enJs(vistaPura, `nuevaSeleccion(${JSON.stringify(desde)}, 'E01', 600, ocupadasPrueba)`);
+    assert.deepStrictEqual([hacia.inicio, hacia.fin], [600, 660]);
+    const cuerpo = enJs(vistaPura, `cuerpoSolicitud(${JSON.stringify(hacia)}, '2026-11-02', {personas: '8', descripcion: ' Clase de SER ', actividad: 'ser'}, false)`);
+    assert.deepStrictEqual(cuerpo, { espacio_id: 'E01', inicio: '2026-11-02T10:00', fin: '2026-11-02T11:00', personas: 8, descripcion: 'Clase de SER', actividad: 'ser' });
+    const noche = enJs(vistaPura, "cuerpoSolicitud({espacioId: 'E01', ancla: 1410, inicio: 1410, fin: 1440}, '2026-11-02', {personas: 3, descripcion: 'Evento'}, true)");
+    assert.strictEqual(noche.fin, '2026-11-03T00:00');
+    assert.ok(!('actividad' in noche));
+  });
+  const prepararEnvio = (vista) => {
+    const doc = vista.contexto.document;
+    doc.getElementById('personas-seleccion').value = '8';
+    doc.getElementById('motivo-seleccion').value = 'Clase de SER';
+    doc.getElementById('actividad-seleccion').value = 'ser';
+    vm.runInContext("estadoSeleccion.fecha = '2026-11-02'; estadoSeleccion.seleccion = {espacioId: 'E01', ancla: 600, inicio: 600, fin: 660}", vista.contexto);
+  };
+  await pruebaAsync('selección: envía a POST /api/solicitudes sin rol, tipo, usuario ni costo', async () => {
+    const vista = await vistaSeleccion('profesor');
+    const envios = [];
+    const base = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones = {}) => {
+      if (opciones.method === 'POST') envios.push({ url, opciones });
+      return base(url, opciones);
+    };
+    prepararEnvio(vista);
+    await vm.runInContext('enviarSeleccion()', vista.contexto);
+    assert.strictEqual(envios.length, 1);
+    assert.strictEqual(envios[0].url, '/api/solicitudes');
+    assert.deepStrictEqual(Object.keys(JSON.parse(envios[0].opciones.body)).sort(),
+      ['actividad', 'descripcion', 'espacio_id', 'fin', 'inicio', 'personas']);
+    assert.match(vista.contexto.document.getElementById('resultado-seleccion').textContent, /pendiente de aprobación/);
+  });
+  await pruebaAsync('selección: muestra el motivo del servidor cuando rechaza', async () => {
+    const vista = await vistaSeleccion('empresa', () => respuestaJson(409, { mensaje: 'Las solicitudes comerciales solo se aceptan en franjas libres.', codigo: 'franja_no_libre' }));
+    prepararEnvio(vista);
+    await vm.runInContext('enviarSeleccion()', vista.contexto);
+    const texto = vista.contexto.document.getElementById('resultado-seleccion').textContent;
+    assert.match(texto, /No se envió la solicitud/);
+    assert.match(texto, /franjas libres/);
+  });
+  await pruebaAsync('selección: la coordinadora no ve el modo; quien solicita sí', async () => {
+    const coordinadora = await vistaSeleccion('coordinadora');
+    assert.strictEqual(coordinadora.contexto.document.getElementById('modo-seleccion').hidden, true);
+    const profesor = await vistaSeleccion('profesor');
+    assert.strictEqual(profesor.contexto.document.getElementById('modo-seleccion').hidden, false);
   });
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);

@@ -64,9 +64,27 @@
             <button id="dia-siguiente" type="button" aria-label="Día siguiente">Siguiente →</button>
             <label>Fecha <input id="selector-fecha" type="date" required></label>
           </div>
+          <div class="controles seleccion-controles">
+            <button id="modo-seleccion" type="button" aria-pressed="false" hidden>Seleccionar bloques</button>
+            <p id="ayuda-seleccion" class="ayuda" hidden>Toca o haz clic en una franja libre para marcar el inicio y en otra de la misma sala para el fin, o arrastra. Teclado: flechas, Espacio/Enter para marcar, Shift+flechas para extender, Esc para cancelar.</p>
+          </div>
           <div id="leyenda" class="leyenda" aria-label="Leyenda del calendario"></div>
           <p class="estado" role="status" aria-live="polite"></p>
           <div class="tabla-scroll calendario-scroll" tabindex="0" role="region" aria-label="Ocupación de aulas, desplazable"><table id="tabla-grilla" class="grilla" aria-label="Ocupación por aula y hora"></table></div>
+          <form id="form-seleccion" class="tarjeta-propuesta resumen-seleccion" aria-live="polite">
+            <div id="resumen-seleccion" hidden>
+              <h3>Tu selección</h3>
+              <p id="resumen-seleccion-datos"></p>
+              <p id="costo-seleccion" class="precio" hidden></p>
+              <div class="campos-seleccion">
+                <label>Personas <input id="personas-seleccion" type="number" min="1" required></label>
+                <label>Motivo <input id="motivo-seleccion" maxlength="300" required placeholder="Ej.: Clase de SER"></label>
+                <label id="campo-actividad-seleccion">Actividad <select id="actividad-seleccion"></select></label>
+              </div>
+              <div class="pie-chat"><button id="limpiar-seleccion" type="button">Limpiar</button><button id="enviar-seleccion" type="submit">Enviar solicitud</button></div>
+            </div>
+            <p id="resultado-seleccion" class="resultado" role="status"></p>
+          </form>
           <h3 class="subtitulo">Reservas aprobadas del día</h3>
           <div id="reservas-aprobadas" class="tabla-scroll"></div>
         </div>
@@ -139,5 +157,6 @@
   <script src="/operaciones.js"></script>
   <script src="/coordinacion.js"></script>
   <script src="/comercial.js"></script>
+  <script src="/seleccion.js"></script>
 </body>
 </html>
