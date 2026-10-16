@@ -94,7 +94,7 @@ def sesion_actual() -> dict:
 @app.get("/api/espacios")
 def listar_espacios() -> list[dict]:
     filas = db.consultar(
-        "SELECT id, nombre, tipo, aforo, estado, elementos, archivo_origen, fila_origen, "
+        "SELECT id, nombre, tipo, aforo, estado, elementos, tarifa_hora, archivo_origen, fila_origen, "
         "EXISTS(SELECT 1 FROM bloqueos b WHERE b.recurso_tipo='aula' AND b.recurso_id=espacios.id) AS bloqueada "
         "FROM espacios ORDER BY id"
     )

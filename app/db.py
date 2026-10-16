@@ -180,7 +180,7 @@ def inicializar_base() -> None:
         con.executescript(ESQUEMA)
         con.execute("BEGIN IMMEDIATE")
         ampliaciones = {
-            "espacios": {"elementos": "TEXT"},
+            "espacios": {"elementos": "TEXT", "tarifa_hora": "REAL"},
             "sesiones": {"elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
             "solicitudes": {"actividad": "TEXT NOT NULL DEFAULT 'otra'",
                             "elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},

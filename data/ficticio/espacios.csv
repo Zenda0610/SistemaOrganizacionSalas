@@ -1,10 +1,10 @@
-id,nombre,tipo,aforo,estado
-DEMO-AUD,Auditorio,auditorio,100,activo
-DEMO-COS,Cosmos,salon,25,activo
-DEMO-SKI,Skilab,salon,20,activo
-DEMO-SPO,Spooki,salon,38,activo
-DEMO-APO,Apolo,salon,34,activo
-DEMO-BLA,Blanca,sala,12,activo
-DEMO-AZU,Azul,sala,10,activo
-DEMO-AMV,Amarillas verdes,sala,6,activo
-DEMO-ART,Artemis,salon,32,activo
+id,nombre,tipo,aforo,estado,tarifa_hora
+DEMO-AUD,Auditorio,auditorio,100,activo,
+DEMO-COS,Cosmos,salon,25,activo,
+DEMO-SKI,Skilab,salon,20,activo,
+DEMO-SPO,Spooki,salon,38,activo,
+DEMO-APO,Apolo,salon,34,activo,
+DEMO-BLA,Blanca,sala,12,activo,
+DEMO-AZU,Azul,sala,10,activo,
+DEMO-AMV,Amarillas verdes,sala,6,activo,
+DEMO-ART,Artemis,salon,32,activo,

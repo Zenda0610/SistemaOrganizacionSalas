@@ -23,7 +23,7 @@ ARCHIVO_ESPACIOS = "espacios.csv"
 ARCHIVO_SESIONES = "sesiones.csv"
 ARCHIVO_COHORTES = "cohortes.csv"
 
-CAMPOS_OPCIONALES = {"nivel", "elementos", "elementos_requeridos"}
+CAMPOS_OPCIONALES = {"nivel", "elementos", "elementos_requeridos", "tarifa_hora"}
 ALIAS_VALORES = {"cancelado": "cancelada", "programado": "programada"}
 CATALOGOS = {
     ARCHIVO_ESPACIOS: {
@@ -43,6 +43,7 @@ CATALOGOS = {
 TRADUCCIONES = {
     "int_parsing": "debe ser un número entero",
     "int_type": "debe ser un número entero",
+    "float_parsing": "debe ser un número (use punto decimal, sin símbolo de moneda)",
     "greater_than": "debe ser mayor que cero",
     "greater_than_equal": "no puede ser negativo",
     "bool_parsing": "debe ser 'si' o 'no'",
@@ -114,6 +115,8 @@ def _preparar_fila(datos: dict, catalogos: dict, correcciones: list) -> dict:
         fila["nivel"] = None
     if fila.get("elementos") == "":
         fila["elementos"] = None
+    if fila.get("tarifa_hora") == "":
+        fila["tarifa_hora"] = None
     if fila.get("elementos_requeridos") == "":
         fila["elementos_requeridos"] = []
     return fila

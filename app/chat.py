@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app import db, ia, reglas, solicitudes, reubicaciones
 from app.identidad import Identidad
-from app.permisos import tipo_solicitud_para
+from app.permisos import tiene_permiso, tipo_solicitud_para
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,12 @@ def _motivo_no_disponible(espacio_id: str, ini: datetime, fin: datetime, persona
     return f"{espacio['nombre']} está ocupada en ese horario"
 
 
-def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict) -> dict:
+def _comercial(identidad: Identidad) -> bool:
+    """Lo comercial solo ve franjas libres y su costo (ver solicitudes.espacios_disponibles)."""
+    return tiene_permiso(identidad.rol, "solicitar_alquiler_comercial")
+
+
+def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict, comercial: bool = False) -> dict:
     faltan = []
     if not datos.get("fecha"):
         faltan.append("la fecha")
@@ -245,7 +250,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
 
     personas = datos["personas"]
     requeridos = datos.get("elementos_requeridos", [])
-    candidatos = solicitudes.espacios_disponibles(ini, fin, personas, requeridos)
+    candidatos = solicitudes.espacios_disponibles(ini, fin, personas, requeridos, comercial=comercial)
     # Azul puede proponerse pendiente de una reubicación explícita, nunca como disponibilidad libre.
     if datos.get("es_zona_franca") and datos.get("permite_reubicacion"):
         with db.transaccion() as con:
@@ -287,10 +292,14 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
                "inicio": datos["inicio"], "fin": datos["fin"], "personas": personas,
                "descripcion": datos["descripcion"]}
     resumen["requiere_reubicacion"] = datos["requiere_reubicacion"]
+    costo = ""
+    if "costo" in elegido:
+        resumen["costo"] = elegido["costo"]
+        costo = f" {reglas.texto_costo(elegido['costo'])} Pago pendiente; el sistema no cobra."
     return _respuesta(
         "propuesta",
         f"{intro} {datos['fecha']} de {datos['inicio']} a {datos['fin']}, {personas} persona(s), "
-        f"motivo: {datos['descripcion']}. ¿Confirma la solicitud? Responda «sí» para crearla.",
+        f"motivo: {datos['descripcion']}.{costo} ¿Confirma la solicitud? Responda «sí» para crearla.",
         [resumen],
     )
 
@@ -323,7 +332,7 @@ def _solicitar(identidad: Identidad, conversacion_id: str, borrador: dict, param
     if "zona franca" in _normalizar(mensaje):
         datos["es_zona_franca"] = True
     actividad = parametros.get("actividad")
-    if actividad in ("zona_franca", "ser", "ingles", "otra"):
+    if actividad in ("zona_franca", "ser", "ingles", "software", "otra"):
         datos["actividad"] = actividad
         datos["es_zona_franca"] = actividad == "zona_franca"
     elif descripcion:
@@ -348,7 +357,7 @@ def _solicitar(identidad: Identidad, conversacion_id: str, borrador: dict, param
             return _respuesta("aclarar_espacio",
                               "No encuentro un aula con ese nombre. Aulas disponibles: "
                               + ", ".join(e["nombre"] for e in _catalogo()) + ".")
-    return _evaluar(identidad.usuario_id, conversacion_id, datos, borrador)
+    return _evaluar(identidad.usuario_id, conversacion_id, datos, borrador, comercial=_comercial(identidad))
 
 
 def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> dict:
@@ -393,7 +402,7 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
         motivo = error.motivo if isinstance(error, _Revisar) else error.mensaje
         datos.pop("propuesta_id", None)
         try:
-            nueva = _evaluar(usuario, conversacion_id, datos, borrador)
+            nueva = _evaluar(usuario, conversacion_id, datos, borrador, comercial=_comercial(identidad))
         except _BorradorCambiado as cambio:
             return _respuesta_vigente(cambio.actual)
         return _respuesta(nueva["estado"],
@@ -413,13 +422,13 @@ def _cancelar(identidad: Identidad, conversacion_id: str, borrador: dict) -> dic
     return _respuesta("cancelada", "La solicitud en curso se canceló. No se creó nada.")
 
 
-def _disponibilidad(parametros: dict) -> dict:
+def _disponibilidad(parametros: dict, comercial: bool = False) -> dict:
     try:
         consulta = ConsultaDisponibilidad(**parametros)
         solicitudes.comprobar_intervalo(consulta.inicio, consulta.fin)
     except (ValueError, TypeError, ErrorSolicitud):
         return _respuesta("datos_no_validos", "Indique fecha y horas válidas para consultar disponibilidad.")
-    libres = solicitudes.espacios_disponibles(consulta.inicio, consulta.fin, consulta.personas)
+    libres = solicitudes.espacios_disponibles(consulta.inicio, consulta.fin, consulta.personas, comercial=comercial)
     texto = (f"{len(libres)} espacio(s) libre(s) en ese intervalo." if libres
              else "No hay espacios libres en ese intervalo.")
     return _respuesta("consulta", texto, libres)
@@ -486,7 +495,7 @@ def procesar(identidad: Identidad, mensaje: str, conversacion_id: str) -> dict:
     except _BorradorCambiado as error:
         return _respuesta_vigente(error.actual)
     if accion == "consultar_disponibilidad":
-        return _disponibilidad(parametros)
+        return _disponibilidad(parametros, _comercial(identidad))
     if accion == "ver_solicitudes":
         return _ver(identidad)
     return _no_entendido()

@@ -27,6 +27,7 @@ class Espacio(BaseModel):
     aforo: int = Field(gt=0)
     estado: Literal["activo", "mantenimiento", "inhabilitado"]
     elementos: list[str] | None = None  # None: inventario no suministrado, no equivale a vacío verificado
+    tarifa_hora: float | None = Field(default=None, ge=0)  # COP por hora; None = por definir
 
     @field_validator("elementos", mode="before")
     @classmethod

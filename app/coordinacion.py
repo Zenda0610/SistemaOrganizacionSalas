@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app import db, ia
 from app.operaciones import afectados
+from app.solicitudes import comerciales_aprobadas
 
 IMPORTANTE, NECESARIA = 'importante', 'necesaria'
 PRIORIDADES_ALTAS = ('alta', 'critica')
@@ -38,7 +39,7 @@ def resumen(ahora: datetime | None = None) -> dict:
     con = db.conectar()
     try:
         pendientes = [dict(f) for f in con.execute(
-            "SELECT id, espacio_id, inicio, fin, personas, descripcion, solicitante_id, creada_en "
+            "SELECT id, espacio_id, inicio, fin, personas, descripcion, tipo, solicitante_id, creada_en "
             "FROM solicitudes WHERE estado = 'pendiente' ORDER BY creada_en, id")]
         for s in pendientes:
             urgente = s['inicio'] < limite  # incluye las vencidas: siguen sin decisión
@@ -47,6 +48,14 @@ def resumen(ahora: datetime | None = None) -> dict:
                 'titulo': f"Solicitud #{s['id']} pendiente en {s['espacio_id']} ({s['inicio']} → {s['fin']})"
                           + ((' · ya empezó' if s['inicio'] < _fmt(ahora) else ' · empieza en menos de 24 h') if urgente else ''),
                 'datos': s})
+            cruces = comerciales_aprobadas(con, s['espacio_id'], s['inicio'], s['fin']) if s['tipo'] == 'academica' else []
+            if cruces:
+                # Una comercial aprobada no se desplaza: la coordinadora decide otra aula u horario.
+                notificaciones.append({
+                    'tipo': 'conflicto_comercial', 'nivel': IMPORTANTE,
+                    'titulo': f"Solicitud académica #{s['id']} choca con alquiler comercial aprobado "
+                              + ', '.join(f"#{c['id']}" for c in cruces) + f" en {s['espacio_id']}: no se desplaza, reubicar",
+                    'datos': {'solicitud': s, 'comerciales': cruces}})
 
         for i in con.execute("SELECT id, recurso_tipo, recurso_id, descripcion, prioridad, estado, creada_en "
                              "FROM incidencias WHERE estado IN ('pendiente_clasificacion', 'pendiente_revision') ORDER BY id"):

@@ -30,6 +30,9 @@ MINUTOS_BLOQUE = _entero("MINUTOS_BLOQUE", 15)
 MINUTOS_DEVOLUCION_ANTICIPADA = _entero("MINUTOS_DEVOLUCION_ANTICIPADA", 5)
 PORCENTAJE_AFORO_MAXIMO = _entero("PORCENTAJE_AFORO_MAXIMO", 100)
 AULA_PREFERIDA_ZONA_FRANCA = _texto("AULA_PREFERIDA_ZONA_FRANCA", "Sala Azul")
+# Actividades académicas que están por encima de las solicitudes comerciales (separadas por coma).
+ACTIVIDADES_PRIORITARIAS = tuple(
+    a.strip() for a in _texto("ACTIVIDADES_PRIORITARIAS", "zona_franca,ser,ingles,software").split(",") if a.strip())
 
 # Cliente de IA: IA_PROVEEDOR = "ollama" o "openai" (API compatible con OpenAI)
 IA_PROVEEDOR = _texto("IA_PROVEEDOR")

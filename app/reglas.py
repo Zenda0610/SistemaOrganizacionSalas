@@ -37,7 +37,21 @@ def actividad_desde_texto(texto: str) -> str:
         return "ser"
     if re.search(r"\bingles\b", texto):
         return "ingles"
+    if re.search(r"\bsoftware\b", texto):
+        return "software"
     return "otra"
+
+
+def supera_comercial(actividad: str | None) -> bool:
+    """Actividades académicas que están por encima de una solicitud comercial (config.ACTIVIDADES_PRIORITARIAS)."""
+    return actividad in config.ACTIVIDADES_PRIORITARIAS
+
+
+def costo(tarifa_hora, inicio: str, fin: str) -> dict:
+    """Costo estimado calculado en el servidor. Sin tarifa en el catálogo, el total queda por definir (None)."""
+    horas = (datetime.strptime(fin, FORMATO) - datetime.strptime(inicio, FORMATO)).total_seconds() / 3600
+    total = None if tarifa_hora is None else round(tarifa_hora * horas, 2)
+    return {"tarifa_hora": tarifa_hora, "horas": round(horas, 2), "total": total, "moneda": "COP"}
 
 
 def prioridad(solicitud: dict) -> int:
@@ -57,3 +71,13 @@ def ordenar_candidatos(candidatos: list[dict], es_zona_franca: bool = False) -> 
         not es_azul(aula) if es_zona_franca else es_azul(aula),
         aula["aforo"], aula["id"],
     ))
+
+
+def _pesos(valor: float) -> str:
+    return "$" + f"{valor:,.0f}".replace(",", ".") + " COP"
+
+
+def texto_costo(costo: dict) -> str:
+    if costo["tarifa_hora"] is None:
+        return "Costo por hora: Por definir."
+    return f"Costo por hora: {_pesos(costo['tarifa_hora'])}; total estimado ({costo['horas']:g} h): {_pesos(costo['total'])}."

@@ -407,11 +407,11 @@ class PruebasChat(BaseSolicitudes):
         evaluar = chat._evaluar
         vigente = None
 
-        def evaluar_tras_cancelar(usuario, conversacion, datos, esperado):
+        def evaluar_tras_cancelar(usuario, conversacion, datos, esperado, **opciones):
             nonlocal vigente
             chat._cancelar(identidad, CONV, anterior)
             vigente = chat._cargar_borrador(identidad.usuario_id, CONV)
-            return evaluar(usuario, conversacion, datos, esperado)
+            return evaluar(usuario, conversacion, datos, esperado, **opciones)
 
         with mock.patch.object(chat, "_evaluar", side_effect=evaluar_tras_cancelar):
             resultado = chat._confirmar(identidad, CONV, anterior)
