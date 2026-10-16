@@ -230,12 +230,18 @@ class PruebasChat(BaseSolicitudes):
         self.assertIn("es_zona_franca", prompt)
 
     def test_recorrido_chat_confirmacion_aprobacion_y_calendario(self):
+        consulta = self.chatear("profesor", ia_json("consultar_disponibilidad", inicio=f"{FECHA}T06:00",
+                                                   fin=f"{FECHA}T08:00", personas=8)).json()
+        self.assertEqual(consulta["estado"], "consulta")
+        self.assertIn("E07", [aula["id"] for aula in consulta["datos"]])
         propuesta = self.solicitar_aula(espacio="Blanca", fecha=FECHA, inicio="06:00", fin="08:00",
                                         personas=8, descripcion="Clase SER").json()
         self.assertEqual(propuesta["estado"], "propuesta")
         creada = self.confirmar().json()
         self.assertEqual(creada["estado"], "solicitud_creada")
         solicitud_id = creada["datos"][0]["id"]
+        self.assertEqual(self.confirmar().json()["estado"], "ya_creada")
+        self.assertEqual(self.solicitudes_contadas(), 1)
         listado = self.api("profesor", "get", "/api/solicitudes").json()
         self.assertEqual(listado[0]["estado"], "pendiente")
         self.assertEqual(self.api("profesor", "post", f"/api/solicitudes/{solicitud_id}/aprobar").status_code, 403)
@@ -245,6 +251,9 @@ class PruebasChat(BaseSolicitudes):
         self.assertEqual(self.aprobar(solicitud_id).json()["codigo"], "no_pendiente")
         self.assertEqual(self.solicitudes_contadas(), 1)
         self.assertEqual(len(self.api("coordinadora", "get", f"/api/reservas?fecha={FECHA}").json()), 1)
+        disponibles = self.api("profesor", "get", "/api/disponibilidad", params={
+            "inicio": f"{FECHA}T06:00", "fin": f"{FECHA}T08:00", "personas": 8}).json()
+        self.assertNotIn("E07", [aula["id"] for aula in disponibles])
 
     def test_un_borrador_no_se_comparte_entre_usuarios(self):
         self.solicitar_aula(espacio="Auditorio", fecha=FECHA, inicio="08:00", fin="10:00",

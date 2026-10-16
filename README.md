@@ -121,10 +121,10 @@ Pendiente de definir: qué lecturas requieren identidad y el esquema oficial de 
 
 ### Recorrido de desarrollo desde el navegador
 
-1. Configurar un proveedor de IA autorizado y una identidad solicitante en el servidor (`USUARIO_DESARROLLO`, `ROL_DESARROLLO`). Abrir Chat, pedir un aula, revisar la propuesta y confirmarla explícitamente.
+1. Configurar un proveedor de IA autorizado y una identidad solicitante en el servidor (`USUARIO_DESARROLLO`, `ROL_DESARROLLO`). En Calendario, consultar la fecha y preguntar disponibilidad al asistente; después pedir un aula, revisar la propuesta y confirmarla explícitamente.
 2. Consultar la solicitud pendiente en la pestaña Solicitudes.
 3. Para probar el otro rol, detener el servidor y volver a iniciarlo con una identidad **distinta** de coordinadora, conservando la misma base. No hay selector de roles ni usuarios reales por sesión en esta etapa.
-4. Abrir Solicitudes, aprobar y consultar la fecha de la reserva en Grilla. La devolución anticipada se muestra sin reducir el bloque reservado.
+4. Abrir Solicitudes, aprobar y consultar la fecha de la reserva en Calendario. La devolución anticipada se muestra sin reducir el bloque reservado.
 
 La identidad es global al proceso. Este recorrido aún requiere configurar y reiniciar el servidor para cambiar de persona; la autenticación oficial y los datos oficiales siguen pendientes. Sin proveedor configurado, el chat informa IA no disponible y no crea solicitudes.
 
@@ -136,6 +136,13 @@ La identidad es global al proceso. Este recorrido aún requiere configurar y rei
 - **Respuesta incierta:** un fallo de red o de contrato puede ocurrir después de crear una solicitud. Se conserva el texto y se consulta `GET /api/solicitudes` antes de permitir otro envío. Si no se puede consultar, permanece bloqueado y aparece Consultar solicitudes antes de repetir. No se reenvía automáticamente. El listado muestra el estado real de las solicitudes autorizadas, pero no permite atribuir una solicitud a una conversación: el resultado del mensaje sigue indicado como desconocido. Cualquier reintento explícito usa el mismo `conversacion_id` de esa pestaña.
 - **Navegación accesible:** las pestañas tienen nombre, panel asociado y selección ARIA; flechas izquierda/derecha y Home/End cambian sección y foco. Los controles tienen foco visible y los estados se anuncian. Cohortes y Calidad de datos se agrupan bajo Datos.
 - El historial y la conversación no se recuperan al recargar la página. Siguen pendientes la identidad oficial, los datos oficiales y la validación con un proveedor de IA real autorizado.
+
+### Pendientes después del recorrido de solicitudes
+
+- **Prioridades:** siguen pendientes como flujo de dominio. La preferencia de selección de Sala Azul conservada del trabajo anterior no resuelve prioridades entre solicitudes o reservas. Antes de implementarlas hay que definir qué actividades tienen precedencia, quién puede aplicarla y qué hacer si el aula ya está ocupada. No se desplazan reservas automáticamente.
+- **Reubicación:** definir quién la solicita y autoriza, qué alternativas son aceptables y cómo se confirma el cambio. Harán falta una operación transaccional que revalide aforo y conflictos, trazabilidad y pruebas; no hay botón ni endpoint de reubicación actualmente.
+- **Entrega/devolución:** definir responsables, estados, registro de horas reales y tratamiento de retrasos. Mostrar `fin - 5 minutos` es únicamente una hora prevista; no registra una entrega ni una devolución y no libera ocupación antes de `fin`.
+- **Integración real:** obtener y validar catálogo/aforos y programación oficiales, implementar identidad oficial por usuario y configurar un proveedor de IA autorizado para probar mensajes variados. La identidad actual sigue siendo global al servidor y los datos de prueba son ficticios. No hay pago verificado, tarifas ni indicadores de ocupación inventados.
 
 ## Instalación
 
@@ -183,6 +190,10 @@ Comprobación adicional en navegador real con FastAPI y SQLite temporales: solic
 Validación de la mejora del frontend desde `453193c` (Windows, Python 3.12.14, Node 24.17.0): 103 pruebas Python, 102 satisfactorias y una omitida por falta de proveedor, incluidas confirmaciones concurrentes y cancelaciones del chat; 58 comprobaciones de interfaz con DOM/HTTP simulados. Se añaden fechas libres, estados sin catálogo/conexión, carreras de fecha (éxito y error), aprobación tardía, historial, tarjetas, doble envío, conservación de texto, consulta tras resultado desconocido y navegación por teclado. Sintaxis JavaScript y Pyflakes sin errores. El backend permanece sin modificaciones en esta entrega.
 
 En navegador real se comprobaron el escritorio y un viewport móvil de 390 × 844, sin desbordamiento horizontal del documento, así como el desplazamiento interno, encabezados/horas sticky y las 96 franjas. Con datos ficticios y una base SQLite temporal se aprobó desde Solicitudes y se consultó la reserva; otra reserva 22:00–02:00 aparece recortada en ambos días. Se comprobaron fechas libres, navegación y agrupación de Datos mediante teclado. El chat real devolvió IA no disponible y conservó el mensaje multilínea en escritorio y móvil; las propuestas y la recuperación de respuestas perdidas se verificaron con mocks, sin simular que hubo inferencia real.
+
+La comprobación posterior a `f2e5dce` conserva los commits locales existentes (el remoto revisado sigue en `7287d88`). La prueba integrada comienza consultando disponibilidad por chat con IA simulada, crea y confirma la solicitud, repite la confirmación sin duplicar, rechaza aprobación como profesor, aprueba como coordinadora y comprueba calendario y disponibilidad final. Los otros casos cubren propuesta modificada antes de confirmar, carreras de fecha y aprobación rechazada sin cambiar el pendiente. No acredita inferencia real ni operación con datos oficiales.
+
+Reejecución de cierre: 103 pruebas Python (102 satisfactorias, una omitida por falta de proveedor) y 58 comprobaciones de interfaz con DOM/HTTP simulados; sintaxis JavaScript y Pyflakes sin errores. En navegador real, con otra base SQLite temporal, una aprobación con solapamiento mostró el error y siguió pendiente después de actualizar desde la API; una segunda solicitud sin conflicto se aprobó y apareció en el calendario 24/7 para su fecha nueva. Se conservaron las capturas de escritorio y móvil de la misma versión del frontend. El recorrido completo con mensajes interpretados por IA real permanece bloqueado por falta de configuración.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
 </content>
