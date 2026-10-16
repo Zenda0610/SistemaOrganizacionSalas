@@ -16,9 +16,33 @@
     <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0">Calendario</button>
     <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1">Solicitudes</button>
     <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1">Aulas</button>
+    <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1">Incidencias y equipos</button>
     <button id="tab-datos" class="pestana" data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
   </nav>
   <main>
+    <section id="operaciones" class="panel" role="tabpanel" aria-labelledby="tab-operaciones" hidden>
+      <div class="titulo-seccion"><h2>Incidencias y préstamos</h2><button id="actualizar-operaciones" type="button">Consultar estado / Actualizar</button></div>
+      <p class="estado" role="status" aria-live="polite"></p>
+      <p>La IA propone una clasificación. Solo la coordinadora confirma bloqueos. Las reservas y préstamos afectados se conservan.</p>
+      <form id="form-incidencia">
+        <h3>Reportar incidencia</h3>
+        <label>Recurso <select id="recurso-incidencia" required></select></label>
+        <label>Reporte <textarea id="texto-incidencia" rows="3" minlength="5" maxlength="2000" required></textarea></label>
+        <button type="submit">Guardar y clasificar</button>
+      </form>
+      <div id="lista-incidencias"></div>
+      <h3>Inventario de equipos</h3>
+      <p>El inventario oficial está pendiente. Cada equipo de prueba debe marcarse como ficticio.</p>
+      <form id="form-equipo" hidden>
+        <label>Identificador <input id="id-equipo" maxlength="60" required></label>
+        <label>Nombre <input id="nombre-equipo" maxlength="150" required></label>
+        <label>Estado <select id="estado-equipo"><option value="disponible">Disponible</option><option value="mantenimiento">Mantenimiento</option><option value="inhabilitado">Inhabilitado</option></select></label>
+        <label><input id="ficticio-equipo" type="checkbox" checked> Equipo ficticio de desarrollo</label>
+        <button type="submit">Registrar equipo</button>
+      </form>
+      <div id="lista-equipos"></div>
+      <h3>Préstamos autorizados</h3><div id="lista-prestamos"></div>
+    </section>
     <section id="grilla" class="panel activo" role="tabpanel" aria-labelledby="tab-grilla">
       <div class="espacio-trabajo">
         <div class="calendario">
@@ -71,5 +95,6 @@
   </main>
   <footer>Entorno de desarrollo · Datos ficticios · Las reservas requieren aprobación de la coordinadora.</footer>
   <script src="/app.js"></script>
+  <script src="/operaciones.js"></script>
 </body>
 </html>

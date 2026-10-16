@@ -18,6 +18,8 @@ ESPERADO = {
     "solicitar_alquiler_comercial": {"estudiante", "empresa"},
     "autorizar_solicitud": {"coordinadora"},
     "recargar_datos": {"coordinadora"},
+    "gestionar_recursos": {"coordinadora"},
+    "prestar_equipo": {"profesor", "administrativo", "coordinadora"},
 }
 
 

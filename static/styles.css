@@ -250,6 +250,12 @@ textarea { width: 100%; resize: vertical; min-height: 86px; max-height: 240px; }
 #respuesta-chat { font-size: 0.8rem; }
 .bloque-datos { margin-top: 24px; border-top: 1px solid var(--borde); padding-top: 18px; }
 footer { color: var(--texto-suave); font-size: 0.75rem; padding: 26px 0; }
+#operaciones form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 16px 0; }
+#operaciones label { display: flex; flex-direction: column; gap: 5px; min-width: 0; max-width: 100%; }
+#operaciones input, #operaciones select { max-width: 100%; }
+#form-incidencia label { flex: 1 1 260px; }
+#operaciones .tarjeta-propuesta { overflow-wrap: anywhere; }
+.pestanas { flex-wrap: wrap; }
 @media (max-width: 950px) {
   body { padding: 0 14px; }
   .espacio-trabajo { grid-template-columns: minmax(0, 1fr); gap: 16px; }

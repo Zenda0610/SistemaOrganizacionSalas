@@ -66,7 +66,7 @@ def _normalizar(texto: str) -> str:
 
 
 def _catalogo() -> list[dict]:
-    return db.consultar("SELECT id, nombre, aforo, estado, elementos FROM espacios ORDER BY id")
+    return db.consultar("SELECT id, nombre, aforo, CASE WHEN EXISTS(SELECT 1 FROM bloqueos b WHERE b.recurso_tipo='aula' AND b.recurso_id=espacios.id) THEN 'inhabilitado' ELSE estado END AS estado, elementos FROM espacios ORDER BY id")
 
 
 def resolver_espacio(texto: str, catalogo: list[dict]) -> tuple[str, object]:
@@ -364,7 +364,7 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
             datos = dict(actual["datos"])
             ini, fin = _intervalo(datos)
             espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos["propuesta_id"],)).fetchone()
-            if espacio is None or espacio["estado"] != "activo":
+            if espacio is None or espacio["estado"] != "activo" or db.aula_bloqueada(con, datos["propuesta_id"]):
                 raise _Revisar("el aula ya no está disponible")
             if datos["personas"] > espacio["aforo"]:
                 raise _Revisar("el aforo ya no alcanza")

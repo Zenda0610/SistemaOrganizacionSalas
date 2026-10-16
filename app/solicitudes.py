@@ -136,7 +136,7 @@ def crear_en(con, identidad: Identidad, datos: NuevaSolicitud) -> int:
     espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos.espacio_id,)).fetchone()
     if espacio is None:
         raise ErrorSolicitud(404, "espacio_no_encontrado", "No existe el espacio indicado.")
-    if espacio["estado"] != "activo":
+    if espacio["estado"] != "activo" or db.aula_bloqueada(con, datos.espacio_id):
         raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
     if datos.personas > espacio["aforo"]:
         raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
@@ -171,7 +171,7 @@ def aprobar_en(con, solicitud_id: int, identidad: Identidad) -> None:
     if fila["solicitante_id"] == identidad.usuario_id:
         raise ErrorSolicitud(403, "autoaprobacion_no_permitida", "No puede aprobar su propia solicitud.")
     espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (fila["espacio_id"],)).fetchone()
-    if espacio is None or espacio["estado"] != "activo":
+    if espacio is None or espacio["estado"] != "activo" or db.aula_bloqueada(con, fila["espacio_id"]):
         raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
     if fila["personas"] > espacio["aforo"]:
         raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
@@ -232,7 +232,7 @@ def espacios_disponibles(inicio: datetime, fin: datetime, personas: Optional[int
             (personas, personas),
         ).fetchall()
         return [dict(espacio) for espacio in candidatos
-                if not buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)
+                if not db.aula_bloqueada(con, espacio["id"]) and not buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)
                 and elementos_compatibles(dict(espacio), elementos_requeridos or [])]
     finally:
         con.close()

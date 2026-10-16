@@ -11,17 +11,23 @@
 - **Interfaz de solicitudes:** pestaña propia para consultar solicitudes y aprobar como coordinadora. Actualiza el calendario y las fechas disponibles, manteniendo la identidad de desarrollo configurada en el servidor.
 - **Frontend de consulta:** Calendario y asistente juntos en escritorio, apilados en móvil; navegación Calendario · Solicitudes · Aulas · Datos. Consulta de cualquier fecha, historial de conversación y tarjetas de propuesta.
 - **Prioridades y reubicación:** prioridad académica igual para Zona Franca, SER e inglés; comercial inferior. Reubicación específica de SER desde Azul para Zona Franca, propuesta y confirmada por coordinadora, con transacción y auditoría.
-- **Pendiente:** usuarios oficiales, programación oficial, préstamo de equipos, incidencias, triaje y registro de entrega/devolución física.
+- **Incidencias y equipos mínimos:** reporte persistente, clasificación propuesta por IA o pendiente si falla, revisión humana y bloqueo de nuevas asignaciones; inventario, préstamo y devolución transaccionales. Interfaz en «Incidencias y equipos».
+- **Pendiente:** usuarios oficiales, estructura y programación oficiales, inventario oficial, validación de inferencia real con clave, reubicación completa y registro de entrega/devolución física de aulas.
 
 ## Problema
 
 La programación de salas vive en una hoja de cálculo que llevan dos personas. Una programa clases y reuniones, con prioridad para Zona Franca. La otra alquila las franjas que quedan libres. La hoja no detecta solapamientos ni excesos de aforo, y no deja trazabilidad de los cambios.
 
-El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohortes y, en la fase 2, préstamos de recursos e incidencias.
+El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohortes, préstamos mínimos de equipos e incidencias.
 
 ## Integrantes
 
-[POR DEFINIR]
+- David Leonardo Martinez Perez
+- Johan Alejandro Serrano Rivera
+- Maria Jose CastroSanjuan
+- Maria Gabriela Rincon Leon
+
+Nombres proporcionados por el equipo para esta entrega. No se han confirmado funciones individuales. Se conserva la autoría histórica de Git (`Zenda0610`, `Claude`); esta lista no reasigna la autoría de los commits anteriores.
 
 ## Stack
 
@@ -31,8 +37,8 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 
 ## Uso de IA
 
-- **En la aplicación:** `app/ia.py` es un cliente que funciona con Ollama o con cualquier API compatible con OpenAI, según variables de entorno. Si la IA no responde, devuelve un error claro. Nunca simula respuestas. El triaje de incidencias llegará en la fase 2.
-- **En el desarrollo:** [POR CONFIRMAR POR EL EQUIPO: herramientas de IA usadas y en qué tareas].
+- **En la aplicación:** `app/ia.py` funciona con Ollama o una API compatible con OpenAI. El chat interpreta solicitudes; incidencias pide categoría, prioridad, área y justificación mediante JSON validado por el servidor. La IA no confirma bloqueos. Un fallo conserva la incidencia pendiente. OpenRouter está preparado con un modelo gratuito explícito; falta la clave para acreditar inferencia real.
+- **En el desarrollo de esta entrega:** Codex se utilizó para implementar Python/JavaScript, preparar pruebas, revisar resultados y comprobar la interfaz en navegador. Los tests unitarios simulan inferencia y HTTP donde lo indican. No se atribuyen herramientas ni tareas personales a integrantes sin confirmación. El historial conserva también commits con autoría `Claude`; no se altera esa atribución.
 
 ## Reglas de negocio
 
@@ -54,7 +60,7 @@ Una respuesta 200 solo se muestra como importación correcta si cumple el contra
 
 ### Reglas de prioridad vigentes
 
-- Una reserva o préstamo no puede cruzarse con una sesión programada.
+- Una reserva de aula no puede cruzarse con una sesión programada en esa aula. Los préstamos mínimos de equipos no tienen agenda futura: hay como máximo uno activo por equipo.
 - Zona Franca, SER e inglés tienen igual prioridad general. Las solicitudes académicas se listan antes que las comerciales; no se aprueba una comercial si hay una académica pendiente que se solape en la misma aula. No se cancelan ni desplazan alquileres ya aprobados automáticamente.
 - No se alquilan espacios en mantenimiento o inhabilitados.
 - La preferencia de Azul para Zona Franca es específica y se reconoce por el nombre verificado del catálogo, nunca por un ID ficticio.
@@ -84,6 +90,8 @@ Matriz de permisos (en `app/permisos.py`):
 | `solicitar_aula_academica` | profesor, administrativo (autorizado: provisional, por rol) |
 | `solicitar_alquiler_comercial` | estudiante, empresa (sujeta a pago; sin tarifas ni pasarela en esta etapa) |
 | `autorizar_solicitud` | coordinadora |
+| `gestionar_recursos` | coordinadora (inventario y revisión/bloqueo de incidencias) |
+| `prestar_equipo` | profesor, administrativo, coordinadora (devolución sujeta a titularidad) |
 | `recargar_datos` | coordinadora |
 
 Pendiente de definir: qué lecturas requieren identidad y el esquema oficial de usuarios. La coordinadora no puede aprobar sus propias solicitudes.
@@ -205,6 +213,30 @@ Después de rellenar la clave y reiniciar, ejecutar `.\.venv\Scripts\python.exe 
 
 ## Instalación
 
+### MVP integrado: incidencias y préstamos mínimos
+
+Esta entrega parte del commit local `f3cec6e` de `feat/solicitudes-aulas`, posterior al revisado `df55244`, y conserva sus cambios. No amplía la reubicación limitada existente; la reubicación completa continúa pendiente.
+
+En **Incidencias y equipos**, cualquier identidad válida puede reportar texto sobre un aula o equipo seleccionado del catálogo. El servidor guarda el reporte antes de inferir y valida estrictamente categoría (`infraestructura`, `tecnologia`, `limpieza`, `seguridad`, `otra`), prioridad (`baja`, `media`, `alta`, `critica`), área (`mantenimiento`, `soporte`, `servicios_generales`, `coordinacion`) y justificación. Una salida inválida o proveedor no disponible deja `pendiente_clasificacion`; una salida válida queda `pendiente_revision`. Estos valores son una taxonomía inicial del MVP, pendiente de validación por operación.
+
+Solo la **coordinadora** puede confirmar una revisión, corregir clasificación y elegir explícitamente bloquear o no. La prioridad no bloquea automáticamente. Se registran autora y fecha; una respuesta tardía de IA no reemplaza una decisión humana. Los bloqueos sobreviven a la recarga de CSV y excluyen el recurso de nuevas solicitudes, confirmaciones, aprobaciones, disponibilidad, alternativas de reubicación y préstamos según corresponda. Las reservas, sesiones y préstamos activos afectados siguen visibles y no se cancelan. La grilla señala las aulas bloqueadas. No hay desbloqueo automático ni interfaz de cierre: es una limitación explícita de este mínimo.
+
+El inventario `equipos` comienza **vacío**, separado del catálogo de aulas. La coordinadora puede registrar identificador, nombre, estado y marca de equipo ficticio. Para demostrar, conservar marcada **Equipo ficticio de desarrollo**; no cargarlo como inventario oficial. Los equipos de las pruebas se crean exclusivamente en SQLite temporal, nunca en `data/ficticio` ni en un inventario oficial.
+
+Profesores, administrativos y coordinadora pueden prestar; los demás roles no. Profesor/administrativo solo a su propio identificador; coordinadora puede registrar un responsable desde la API y el botón web presta a su nombre. El servidor registra responsable, fecha y operadora. SQLite serializa préstamo/devolución; un índice único impide dos préstamos activos del mismo equipo. Un equipo prestado, en mantenimiento, inhabilitado o bloqueado se rechaza. La devolución registra autora y hora, rechaza una segunda devolución y nunca levanta un bloqueo. La coordinadora ve todos los préstamos/incidencias; los demás solo los propios (el inventario no revela responsables). Se conservan los roles existentes y la identidad global de desarrollo; esto no implementa autenticación real.
+
+API: `GET/POST /api/equipos`, `GET/POST /api/prestamos`, `POST /api/prestamos/{id}/devolver`, `GET/POST /api/incidencias`, `POST /api/incidencias/{id}/revisar`. Las escrituras se validan en servidor. Un fallo de red en la interfaz bloquea la repetición hasta consultar estado; no se reenvía automáticamente ni se afirma éxito sin contrato válido. Un reporte incierto puede haberse guardado: revisar el listado y el texto antes de volver a enviarlo.
+
+La configuración existente `.env` se conserva y Git la ignora. Ruta absoluta de esta instalación: `C:\Users\david\OneDrive\Desktop\Hackaton\SistemaOrganizacionSalas\.env`. Pegar la clave solo tras `IA_API_KEY=` en ese archivo (sustituir `PEGA_AQUI_TU_CLAVE` si se copió la plantilla). La clave no se sirve al frontend. El 16/10/2026 se volvió a consultar el catálogo oficial: `nvidia/nemotron-3.5-super-vl:free` mantiene entrada/salida cero; no apareció DeepSeek gratuito. La comprobación de catálogo no acredita inferencia. La plantilla con marcador no se considera una clave configurada.
+
+Para reiniciar: detener con Ctrl+C y ejecutar desde la raíz `.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`. Después de completar la clave, comprobar chat e incidencias reales con:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_chat.PruebaInferenciaReal tests.test_operaciones.PruebaProveedorIncidencias -v
+```
+
+Sin clave estos casos se omiten; no se consideran aprobados ni se reemplazan por mocks. El recorrido chat → confirmación → aprobación → calendario, los permisos, la concurrencia, préstamo/segundo préstamo/devolución y bloqueo con operaciones afectadas se comprueban localmente con SQLite real temporal e IA simulada. La devolución esperada de aulas cinco minutos antes sigue siendo informativa; el nuevo registro de devolución pertenece a **equipos**, no implementa entrega/devolución física de aulas. Quedan pendientes datos oficiales, funciones individuales del equipo, usuarios oficiales, clasificación con proveedor real y reubicación completa.
+
 Requisitos: Python 3.11 o superior.
 
 **Windows (PowerShell):**
@@ -259,4 +291,8 @@ Validación del incremento de catálogo, OpenRouter y reubicación desde `df5524
 En navegador real (escritorio y móvil 390 × 844), sobre SQLite temporal y datos de prueba aislados, se mostró el solicitante autorizado; la aprobación normal de Zona Franca en Azul falló por solapamiento; evaluar propuso Blanca para SER sin moverla; confirmar movió SER a Blanca y aprobó Zona Franca en Azul, registrando `dev-coordinadora` y la hora. Listado y calendario mostraron ambas reservas, sin desbordamiento horizontal del documento en móvil. Las ocupaciones se sembraron solo para esta prueba, no se añadieron al catálogo de demostración. El navegador informó la falta de IA_API_KEY: sigue pendiente ejecutar mensajes variados y el recorrido completo con Nemotron real después de que el usuario coloque su clave.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
+
+Validación del MVP integrado del 16/10/2026 desde `f3cec6e`: **144 pruebas Python, 142 satisfactorias y dos de proveedor real omitidas por falta de clave**, y **65 comprobaciones de interfaz con DOM/HTTP simulados**, todas satisfactorias. Sintaxis de ambos scripts y Pyflakes sin errores. Las nuevas pruebas cubren permisos, recursos inexistentes, clasificación inválida, reporte persistido ante fallo, prioridad sin bloqueo automático, revisión humana frente a IA tardía, bloqueo con reservas/préstamos conservados, exclusión tras recargar CSV, chat/confirmación/aprobación/calendario, préstamo y devolución simultáneos y doble confirmación de revisión.
+
+Navegador real con FastAPI y SQLite temporal: préstamo del equipo explícitamente ficticio, reporte conservado sin IA, bloqueo humano, devolución sin levantarlo; incidencia en Azul con reserva de prueba conservada, autora y fecha de revisión. HTTP real posterior rechazó otro préstamo con 409 `equipo_no_disponible`; el catálogo mostró Azul bloqueada y la reserva permaneció. Capturas de escritorio y móvil 390 × 844, documento sin desbordamiento horizontal (375 px). No hubo clasificación real ni interpretación de chat real: ambas esperan IA_API_KEY. No se incorporaron esos equipos/ocupaciones de pruebas al catálogo ni al repositorio.
 </content>

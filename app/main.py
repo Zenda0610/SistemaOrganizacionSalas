@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
-from app import carga_datos, db, ia, reubicaciones
+from app import carga_datos, db, ia, reubicaciones, operaciones
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
@@ -87,10 +87,15 @@ def sesion_actual() -> dict:
 @app.get("/api/espacios")
 def listar_espacios() -> list[dict]:
     filas = db.consultar(
-        "SELECT id, nombre, tipo, aforo, estado, elementos, archivo_origen, fila_origen FROM espacios ORDER BY id"
+        "SELECT id, nombre, tipo, aforo, estado, elementos, archivo_origen, fila_origen, "
+        "EXISTS(SELECT 1 FROM bloqueos b WHERE b.recurso_tipo='aula' AND b.recurso_id=espacios.id) AS bloqueada "
+        "FROM espacios ORDER BY id"
     )
     for fila in filas:
         fila["elementos"] = json.loads(fila["elementos"]) if fila["elementos"] is not None else None
+        fila["bloqueada"] = bool(fila["bloqueada"])
+        if fila["bloqueada"]:
+            fila["estado"] = "inhabilitado"
     return filas
 
 
@@ -219,6 +224,46 @@ def recargar_datos():
 @app.get("/api/ia/salud")
 def salud_ia() -> dict:
     return ia.verificar_salud()
+
+
+@app.get("/api/equipos")
+def equipos(_identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.listar_equipos()
+
+
+@app.post("/api/equipos", status_code=201)
+def nuevo_equipo(datos: operaciones.EquipoNuevo, identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.crear_equipo(datos, identidad)
+
+
+@app.get("/api/prestamos")
+def prestamos(identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.listar_prestamos(identidad)
+
+
+@app.post("/api/prestamos", status_code=201)
+def prestar(datos: operaciones.PrestamoNuevo, identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.prestar(datos, identidad)
+
+
+@app.post("/api/prestamos/{identificador}/devolver")
+def devolver(identificador: int, identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.devolver(identificador, identidad)
+
+
+@app.get("/api/incidencias")
+def incidencias(identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.listar_incidencias(identidad)
+
+
+@app.post("/api/incidencias", status_code=201)
+def reportar(datos: operaciones.Reporte, identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.reportar(datos, identidad)
+
+
+@app.post("/api/incidencias/{identificador}/revisar")
+def revisar(identificador: int, datos: operaciones.Revision, identidad: Identidad = Depends(identidad_actual)):
+    return operaciones.revisar(identificador, datos, identidad)
 
 
 # La interfaz se sirve al final para que no tape las rutas /api.

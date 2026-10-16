@@ -11,6 +11,8 @@ PERMISOS = {
     "solicitar_alquiler_comercial": frozenset({"estudiante", "empresa"}),
     "autorizar_solicitud": frozenset({"coordinadora"}),
     "recargar_datos": frozenset({"coordinadora"}),
+    "gestionar_recursos": frozenset({"coordinadora"}),
+    "prestar_equipo": frozenset({"profesor", "administrativo", "coordinadora"}),
 }
 
 

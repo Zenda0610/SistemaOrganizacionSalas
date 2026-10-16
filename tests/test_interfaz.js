@@ -74,6 +74,7 @@ function cargarInterfaz(respuestaImportacion) {
   };
   vm.createContext(contexto);
   vm.runInContext(codigoInterfaz, contexto);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'static', 'operaciones.js'), 'utf8'), contexto);
   return { contexto, elementos, banner: () => elementos["resultado-importacion"].textContent };
 }
 
@@ -668,6 +669,70 @@ const casos = [
     await consultar.listeners.click();
     assert.strictEqual(envios, 1);
     assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /confirmadas/);
+  });
+  async function escenarioOperaciones(rol = 'coordinadora', incidencia = {}) {
+    const vista = await escenario(rol);
+    const devolver = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones = {}) => {
+      if (url === '/api/sesion') return respuestaJson(200, { usuario_id: `dev-${rol}`, rol });
+      if (url === '/api/equipos') return respuestaJson(200, [{ id: 'FICTICIO', nombre: 'Equipo de prueba', estado: 'disponible', ficticio: 1, prestado: 0, bloqueado: 0 }]);
+      if (url === '/api/prestamos') return respuestaJson(200, []);
+      if (url === '/api/incidencias') return respuestaJson(200, [{ id: 1, recurso_tipo: 'equipo', recurso_id: 'FICTICIO', descripcion: 'No enciende', estado: 'pendiente_clasificacion', reportada_por: `dev-${rol}`, ...incidencia }]);
+      return devolver(url, opciones);
+    };
+    await vm.runInContext('cargarOperaciones()', vista.contexto);
+    return vista;
+  }
+  await pruebaAsync('operaciones: pendiente sin IA admite revisión humana; no afirma bloqueo', async () => {
+    const vista = await escenarioOperaciones();
+    assert.match(textoNodo(vista.elementos['lista-incidencias']), /Pendiente de clasificación/);
+    assert.ok(botonesNodo(vista.elementos['lista-incidencias']).some((b) => b.textContent === 'Confirmar revisión'));
+    assert.match(textoNodo(vista.elementos['lista-equipos']), /FICTICIO/);
+    assert.match(textoNodo(vista.elementos['lista-equipos']), /Disponible/);
+  });
+  await pruebaAsync('operaciones: profesor no ve gestión de inventario ni confirmación de bloqueo', async () => {
+    const vista = await escenarioOperaciones('profesor');
+    assert.strictEqual(vista.elementos['form-equipo'].hidden, true);
+    assert.strictEqual(botonesNodo(vista.elementos['lista-incidencias']).length, 0);
+    assert.ok(botonesNodo(vista.elementos['lista-equipos']).some((b) => b.textContent === 'Prestar a mi nombre'));
+  });
+  await pruebaAsync('operaciones: respuesta perdida bloquea repetición hasta consultar estado', async () => {
+    const vista = await escenarioOperaciones();
+    const devolver = vista.contexto.fetch;
+    let envios = 0;
+    vista.contexto.fetch = (url, opciones = {}) => {
+      if (opciones.method === 'POST') { envios++; throw new TypeError('red caída'); }
+      return devolver(url, opciones);
+    };
+    await vm.runInContext("mutarOperacion('/prestamos', {}, (r) => Boolean(r.id))", vista.contexto);
+    assert.match(vista.elementos['#operaciones .estado'].textContent, /Resultado desconocido/);
+    await vm.runInContext("mutarOperacion('/prestamos', {}, (r) => Boolean(r.id))", vista.contexto);
+    assert.strictEqual(envios, 1);
+    await vm.runInContext('cargarOperaciones()', vista.contexto);
+    assert.match(vista.elementos['#operaciones .estado'].textContent, /Estado consultado/);
+  });
+  await pruebaAsync('operaciones: contrato inválido no se presenta como éxito', async () => {
+    const vista = await escenarioOperaciones();
+    const devolver = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones = {}) => opciones.method === 'POST' ? respuestaJson(201, {}) : devolver(url, opciones);
+    await vm.runInContext("mutarOperacion('/prestamos', {}, (r) => Number.isInteger(r.id))", vista.contexto);
+    assert.match(vista.elementos['#operaciones .estado'].textContent, /Resultado desconocido/);
+  });
+  await pruebaAsync('operaciones: préstamo confirmado actualiza las listas y bloquea doble envío', async () => {
+    const vista = await escenarioOperaciones('profesor');
+    const devolver = vista.contexto.fetch;
+    let envios = 0;
+    let responder;
+    vista.contexto.fetch = (url, opciones = {}) => {
+      if (opciones.method === 'POST') { envios++; return new Promise((r) => { responder = r; }); }
+      return devolver(url, opciones);
+    };
+    const primero = vm.runInContext("mutarOperacion('/prestamos', {}, (r) => r.id === 1)", vista.contexto);
+    await vm.runInContext("mutarOperacion('/prestamos', {}, (r) => r.id === 1)", vista.contexto);
+    responder(respuestaJson(201, {id: 1}));
+    await primero;
+    assert.strictEqual(envios, 1);
+    assert.match(vista.elementos['#operaciones .estado'].textContent, /confirmada por el servidor/);
   });
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);

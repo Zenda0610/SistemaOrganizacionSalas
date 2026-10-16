@@ -7,6 +7,45 @@ from typing import Iterator
 from app import config
 
 ESQUEMA = """
+CREATE TABLE IF NOT EXISTS equipos (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('disponible','mantenimiento','inhabilitado')),
+    ficticio INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS prestamos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipo_id TEXT NOT NULL REFERENCES equipos(id),
+    responsable TEXT NOT NULL,
+    prestado_por TEXT NOT NULL,
+    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    devuelto_en TEXT,
+    devuelto_por TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS prestamo_activo_equipo ON prestamos(equipo_id) WHERE devuelto_en IS NULL;
+CREATE TABLE IF NOT EXISTS incidencias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    descripcion TEXT NOT NULL,
+    recurso_tipo TEXT NOT NULL CHECK (recurso_tipo IN ('aula','equipo')),
+    recurso_id TEXT NOT NULL,
+    reportada_por TEXT NOT NULL,
+    creada_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    categoria TEXT,
+    prioridad TEXT,
+    area TEXT,
+    justificacion TEXT,
+    estado TEXT NOT NULL DEFAULT 'pendiente_clasificacion',
+    revisada_por TEXT,
+    revisada_en TEXT
+);
+CREATE TABLE IF NOT EXISTS bloqueos (
+    recurso_tipo TEXT NOT NULL,
+    recurso_id TEXT NOT NULL,
+    incidencia_id INTEGER NOT NULL REFERENCES incidencias(id),
+    confirmado_por TEXT NOT NULL,
+    confirmado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (recurso_tipo,recurso_id)
+);
 CREATE TABLE IF NOT EXISTS espacios (
     id TEXT PRIMARY KEY,
     nombre TEXT NOT NULL,
@@ -128,6 +167,10 @@ def conectar() -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     return con
+
+
+def aula_bloqueada(con, identificador) -> bool:
+    return con.execute("SELECT 1 FROM bloqueos WHERE recurso_tipo='aula' AND recurso_id=?", (identificador,)).fetchone() is not None
 
 
 def inicializar_base() -> None:

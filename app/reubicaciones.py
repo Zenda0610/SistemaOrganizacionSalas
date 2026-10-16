@@ -63,13 +63,14 @@ def _preparar(con, solicitud: dict, identidad: Identidad, destino_id=None) -> di
     if datetime.fromisoformat(fuente["inicio"]) <= ahora or datetime.fromisoformat(solicitud["inicio"]) <= ahora:
         _error("actividad_iniciada", "No se desplaza una actividad iniciada ni se reubica para una solicitud ya iniciada.")
     azul = _fila(con, "espacios", solicitud["espacio_id"])
-    if azul["estado"] != "activo" or solicitud["personas"] > azul["aforo"]:
+    if azul["estado"] != "activo" or db.aula_bloqueada(con, azul["id"]) or solicitud["personas"] > azul["aforo"]:
         _error("espacio_no_disponible", "Azul no está activa o no tiene aforo suficiente para Zona Franca.")
     if not solicitudes.elementos_compatibles(azul, json.loads(solicitud["elementos_requeridos"])):
         _error("elementos_no_verificados", "No están verificados los elementos que necesita Zona Franca.")
     requeridos = json.loads(fuente["origen"]["elementos_requeridos"])
     candidatas = [dict(a) for a in con.execute("SELECT * FROM espacios WHERE estado = 'activo' AND aforo >= ?", (fuente["personas"],))
                   if a["id"] != azul["id"] and (destino_id is None or a["id"] == destino_id)
+                  and not db.aula_bloqueada(con, a["id"])
                   and solicitudes.elementos_compatibles(dict(a), requeridos)
                   and not solicitudes.buscar_conflictos(con, a["id"], fuente["inicio"], fuente["fin"])]
     candidatas = reglas.ordenar_candidatos(candidatas)

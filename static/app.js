@@ -6,6 +6,7 @@ const PASO_MINUTOS = 15;   // debe coincidir con MINUTOS_BLOQUE
 const NOMBRES_AREA = { software: "Software", ingles: "Inglés", ser: "SER", otra: "Otra" };
 
 const cargadores = {
+  operaciones: () => cargarOperaciones(),
   grilla: cargarGrilla,
   espacios: cargarEspacios,
   cohortes: cargarCohortes,
@@ -120,7 +121,7 @@ function activarPestana(nombre) {
     p.classList.toggle("activo", p.id === nombre);
     p.hidden = p.id !== nombre;
   });
-  if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes") {
+  if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes" || nombre === "operaciones") {
     cargadores[nombre]().catch((error) => mostrarEstado(nombre, "error", error.message));
     cargadosPorPestana.add(nombre);
   }
@@ -224,7 +225,7 @@ function construirGrilla(espacios, sesiones, reservas, fecha) {
 
   const cabecera = crearElemento("tr");
   cabecera.appendChild(crearElemento("th", "hora", "Hora"));
-  espacios.forEach((e) => cabecera.appendChild(crearElemento("th", "", `${e.nombre} (${e.aforo})`)));
+  espacios.forEach((e) => cabecera.appendChild(crearElemento("th", "", `${e.nombre} (${e.aforo})${e.bloqueada ? ' · Bloqueada' : ''}`)));
   tabla.replaceChildren(crearElemento("thead"));
   tabla.querySelector("thead").appendChild(cabecera);
 
