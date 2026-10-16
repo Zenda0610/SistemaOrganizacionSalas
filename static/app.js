@@ -483,6 +483,7 @@ async function cargarSolicitudes() {
       { titulo: "Fin", valor: (f) => f.fin },
       { titulo: "Devolución anticipada", valor: (f) => f.hora_devolucion },
       { titulo: "Personas", valor: (f) => f.personas },
+      { titulo: "Solicitante", valor: (f) => f.solicitante_id || "No disponible" },
       { titulo: "Motivo", valor: (f) => f.descripcion },
       { titulo: "Estado", valor: (f) => f.estado },
       { titulo: "Condición", valor: (f) => f.tipo === "comercial"
@@ -499,6 +500,12 @@ async function cargarSolicitudes() {
           boton.disabled = aprobacionesEnCurso.has(fila.id);
           boton.addEventListener("click", () => aprobarSolicitud(fila.id, boton));
           celda.appendChild(boton);
+          if (fila.actividad === "zona_franca" && fila.tipo === "academica") {
+            const evaluar = crearElemento("button", "", "Evaluar reubicación de SER");
+            evaluar.type = "button";
+            evaluar.addEventListener("click", () => proponerReubicacion(fila.id, evaluar));
+            celda.appendChild(evaluar);
+          }
         }
         cuerpo.children[indice].appendChild(celda);
       });
@@ -532,7 +539,8 @@ async function aprobarSolicitud(id, boton) {
   } catch (error) {
     resultado.className = "resultado estado-error";
     const rechazoConfirmado = ["sin_identidad", "sin_permiso", "autoaprobacion_no_permitida",
-      "solicitud_no_encontrada", "no_pendiente", "espacio_no_disponible", "aforo_excedido", "solapamiento"]
+      "solicitud_no_encontrada", "no_pendiente", "espacio_no_disponible", "aforo_excedido", "solapamiento",
+      "prioridad_academica", "elementos_no_verificados"]
       .includes(error.codigo);
     resultado.textContent = rechazoConfirmado
       ? `No se aprobó la solicitud (${error.codigo}): ${error.message}`
@@ -555,6 +563,72 @@ async function aprobarSolicitud(id, boton) {
   }
 }
 
+// La evaluación solo guarda una propuesta. Únicamente confirmar aplica el cambio.
+async function proponerReubicacion(solicitudId, boton) {
+  if (boton.disabled) return;
+  boton.disabled = true;
+  const panel = document.getElementById("reubicacion-propuesta");
+  panel.replaceChildren(crearElemento("p", "estado", "Evaluando alternativa sin mover actividades…"));
+  try {
+    const plan = await pedir(`/solicitudes/${solicitudId}/reubicacion/proponer`, { method: "POST" });
+    if (!plan || plan.estado !== "propuesta" || typeof plan.id !== "string") throw new Error("Respuesta de evaluación no reconocida.");
+    pintarReubicacion(plan);
+  } catch (error) {
+    panel.replaceChildren(crearElemento("p", "estado estado-error", `No se aplicó ninguna reubicación con esta evaluación. ${error.message}`));
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+function pintarReubicacion(plan) {
+  const panel = document.getElementById("reubicacion-propuesta");
+  const tarjeta = crearElemento("article", "tarjeta-propuesta");
+  tarjeta.appendChild(crearElemento("h3", "", plan.estado === "aplicada" ? "Reubicación y aprobación confirmadas" : "Propuesta de reubicación · Requiere autorización"));
+  tarjeta.appendChild(crearElemento("p", "", `SER: ${plan.aula_origen} → ${plan.aula_destino}. ${plan.inicio} → ${plan.fin}, ${plan.personas} personas. Zona Franca solicita el aula original.`));
+  if (plan.estado === "aplicada") {
+    tarjeta.appendChild(crearElemento("p", "", `Autorizada por ${plan.autorizada_por} · ${plan.autorizada_en}.`));
+  } else {
+    const confirmar = crearElemento("button", "", "Confirmar reubicación y aprobar Zona Franca");
+    confirmar.type = "button";
+    confirmar.addEventListener("click", () => confirmarReubicacion(plan, confirmar));
+    tarjeta.appendChild(confirmar);
+  }
+  panel.replaceChildren(tarjeta);
+}
+
+async function confirmarReubicacion(plan, boton) {
+  if (boton.disabled) return;
+  boton.disabled = true;
+  const fechaAlConfirmar = document.getElementById("selector-fecha").value;
+  const panel = document.getElementById("reubicacion-propuesta");
+  try {
+    const resultado = await pedir(`/reubicaciones/${plan.id}/confirmar`, { method: "POST" });
+    if (!resultado || resultado.id !== plan.id || resultado.estado !== "aplicada") throw new Error("La respuesta no confirma el cambio.");
+    pintarReubicacion(resultado);
+    const fechaActual = document.getElementById("selector-fecha").value;
+    const preferida = fechaAlConfirmar === fechaActual ? (resultado.solicitud_inicio || resultado.inicio).slice(0, 10) : fechaActual;
+    const [lista, calendario] = await Promise.all([cargarSolicitudes(), cargarGrilla(preferida)]);
+    if (!lista || !calendario) panel.appendChild(crearElemento("p", "estado", "El cambio fue aplicado, pero debes actualizar las vistas."));
+  } catch (error) {
+    panel.appendChild(crearElemento("p", "estado estado-error", `No se confirmó el resultado. ${error.message} Consulta el estado antes de repetir.`));
+    const consultar = crearElemento("button", "", "Consultar reubicación");
+    consultar.type = "button";
+    consultar.addEventListener("click", async () => {
+      consultar.disabled = true;
+      try {
+        const estado = await pedir(`/reubicaciones/${plan.id}`);
+        if (!estado || estado.id !== plan.id || !["propuesta", "aplicada"].includes(estado.estado)) throw new Error("Estado no reconocido.");
+        pintarReubicacion(estado);
+        await Promise.all([cargarSolicitudes(), cargarGrilla()]);
+      } catch (fallo) {
+        panel.appendChild(crearElemento("p", "estado estado-error", fallo.message));
+        consultar.disabled = false;
+      }
+    });
+    panel.appendChild(consultar);
+  }
+}
+
 // --- Estado de la IA -----------------------------------------------------------
 
 async function cargarEstadoIA() {
@@ -564,7 +638,7 @@ async function cargarEstadoIA() {
     const conectada = salud.estado === "conectada";
     insignia.className = `insignia ${conectada ? "insignia-ok" : "insignia-error"}`;
     insignia.textContent = conectada
-      ? `IA: conectada (${salud.proveedor} · ${salud.modelo})`
+      ? `IA: catálogo accesible (${salud.modelo}). Inferencia por verificar.`
       : `IA: no disponible. ${salud.mensaje}`;
   } catch (error) {
     insignia.className = "insignia insignia-error";
@@ -617,6 +691,7 @@ function tarjetaSolicitud(fila, estadoChat) {
     lista.appendChild(crearElemento("dd", "", String(valor)));
   });
   tarjeta.appendChild(lista);
+  if (fila.requiere_reubicacion) tarjeta.appendChild(crearElemento("p", "ayuda", "Aula ocupada por SER. La coordinadora debe evaluar y confirmar la reubicación; todavía no está disponible."));
   if (fila.tipo === "comercial") tarjeta.appendChild(crearElemento("p", "ayuda", "Comercial · Pago pendiente, no verificado por el sistema."));
   return tarjeta;
 }

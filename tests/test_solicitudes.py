@@ -320,8 +320,8 @@ class PruebasReglas(BaseSolicitudes):
             self.assertEqual(reglas.hora_devolucion("2026-11-03 00:00"), "2026-11-02 23:50")
 
     def test_orden_de_candidatos_es_estable_por_aforo_e_id_sin_mutar_entrada(self):
-        candidatos = [{"id": "E08", "aforo": 10}, {"id": "E03", "aforo": 20},
-                      {"id": "E02", "aforo": 20}, {"id": "E07", "aforo": 12}]
+        candidatos = [{"id": "E08", "nombre": "Sala Azul", "aforo": 10}, {"id": "E03", "nombre": "Skilab", "aforo": 20},
+                      {"id": "E02", "nombre": "Cosmos", "aforo": 20}, {"id": "E07", "nombre": "Blanca", "aforo": 12}]
         original = [dict(c) for c in candidatos]
         self.assertEqual([c["id"] for c in reglas.ordenar_candidatos(candidatos)], ["E07", "E02", "E03", "E08"])
         self.assertEqual([c["id"] for c in reglas.ordenar_candidatos(candidatos, True)], ["E08", "E07", "E02", "E03"])

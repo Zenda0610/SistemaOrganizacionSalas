@@ -1,0 +1,13 @@
+id,nombre,tipo,aforo,estado
+E01,Auditorio,auditorio,100,activo
+E02,Cosmos,salon,25,activo
+E03,Skylab,salon,20,activo
+E04,Sputnik,salon,38,activo
+E05,Apolo,salon,34,activo
+E06,Artemis,salon,32,activo
+E07,Sala Blanca,sala,12,activo
+E08,Sala Azul,sala,10,activo
+E09,Cubiculo Amarillo,cubiculo,6,activo
+E10,Cubiculo Verde,cubiculo,6,activo
+E11,Sala Nueva,sala,,activo
+E04,Sputnik,salon,38,activo

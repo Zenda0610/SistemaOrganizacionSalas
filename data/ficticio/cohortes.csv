@@ -1,10 +1,1 @@
 codigo,espacio_id,jornada,ruta,cantidad_campers,fecha_fin,trainer
-Z1 Jul-26,E04,manana,java,28,2026-11-14,Tomas Herrera
-Z2 Ago-26,E05,mediodia,ia,24,2026-12-05,Paula Gomez
-Z3 Ago-26,E06,tarde,java,22,2026-11-28,Ricardo Saenz
-Z4 Sep-26,E07,manana,ia,12,2026-12-18,Natalia Gil
-Z5 Sep-26,E02,mediodia,java,20,2026-11-20,Tomas Herrera
-Z6 Jun-26,E03,tarde,ia,18,2026-09-30,Paula Gomez
-Z7 Oct-26,E08,manana,java,10,2026-12-11,Ricardo Saenz
-Z8 Oct-26,E01,tarde,ia,60,2026-12-30,Natalia Gil
-Z9 Oct-26,E10,mediodia,java,6,2027-01-08,Carlos Mejia

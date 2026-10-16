@@ -1,5 +1,6 @@
 """Arranque de FastAPI, rutas de la API y servicio de la interfaz estática."""
 import logging
+import json
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
-from app import carga_datos, db, ia
+from app import carga_datos, db, ia, reubicaciones
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
@@ -85,9 +86,12 @@ def sesion_actual() -> dict:
 
 @app.get("/api/espacios")
 def listar_espacios() -> list[dict]:
-    return db.consultar(
-        "SELECT id, nombre, tipo, aforo, estado, archivo_origen, fila_origen FROM espacios ORDER BY id"
+    filas = db.consultar(
+        "SELECT id, nombre, tipo, aforo, estado, elementos, archivo_origen, fila_origen FROM espacios ORDER BY id"
     )
+    for fila in filas:
+        fila["elementos"] = json.loads(fila["elementos"]) if fila["elementos"] is not None else None
+    return filas
 
 
 @app.get("/api/sesiones")
@@ -167,6 +171,21 @@ def crear_solicitud(datos: NuevaSolicitud, identidad: Identidad = Depends(identi
 @app.post("/api/solicitudes/{solicitud_id}/aprobar", dependencies=[requerir_permiso("autorizar_solicitud")])
 def aprobar_solicitud(solicitud_id: int, identidad: Identidad = Depends(identidad_actual)) -> dict:
     return solicitudes.aprobar_solicitud(solicitud_id, identidad)
+
+
+@app.post("/api/solicitudes/{solicitud_id}/reubicacion/proponer", dependencies=[requerir_permiso("autorizar_solicitud")])
+def proponer_reubicacion(solicitud_id: int, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return reubicaciones.proponer(solicitud_id, identidad)
+
+
+@app.get("/api/reubicaciones/{identificador}", dependencies=[requerir_permiso("autorizar_solicitud")])
+def consultar_reubicacion(identificador: str, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return reubicaciones.consultar(identificador, identidad)
+
+
+@app.post("/api/reubicaciones/{identificador}/confirmar", dependencies=[requerir_permiso("autorizar_solicitud")])
+def confirmar_reubicacion(identificador: str, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return reubicaciones.confirmar(identificador, identidad)
 
 
 @app.get("/api/calidad-datos")

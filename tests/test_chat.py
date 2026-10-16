@@ -9,7 +9,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
-from app import chat, config, db, ia
+from app import chat, db, ia
 from app.chat import procesar
 from app.identidad import Identidad
 from tests.test_solicitudes import BaseSolicitudes
@@ -177,9 +177,9 @@ class PruebasChat(BaseSolicitudes):
     # --- Aislamiento y concurrencia --------------------------------------------------
 
     def test_alias_confirmados_resuelven_ids_existentes(self):
-        catalogo = chat._catalogo()
-        for nombre, esperado in {"Spooki": "E04", "Skilab": "E03", "Amarillas verdes": "E09",
-                                 "Blanca": "E07", "Azul": "E08"}.items():
+        catalogo = [{"id": f"oficial-{i}", "nombre": nombre} for i, nombre in enumerate(
+            ("Spooki", "Skilab", "Amarillas verdes", "Blanca", "Azul"))]
+        for nombre, esperado in {e["nombre"]: e["id"] for e in catalogo}.items():
             with self.subTest(nombre=nombre):
                 estado, espacio = chat.resolver_espacio(nombre, catalogo)
                 self.assertEqual(estado, "ok")
@@ -431,7 +431,7 @@ class PruebasChat(BaseSolicitudes):
         self.assertEqual(corto.status_code, 422)
 
 
-@unittest.skipUnless(config.IA_PROVEEDOR and config.IA_URL and config.IA_MODELO,
+@unittest.skipUnless(ia._problema_configuracion() is None,
                      "Proveedor de IA no configurado: la inferencia real no se ejecutó")
 class PruebaInferenciaReal(unittest.TestCase):
     def test_el_proveedor_responde(self):

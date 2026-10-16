@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app import config, db
 
-ORIGEN_DATOS = Path(__file__).resolve().parent.parent / "data" / "ficticio"
+ORIGEN_DATOS = Path(__file__).resolve().parent / "fixtures" / "defectuosos"
 
 
 class BasePrueba(unittest.TestCase):

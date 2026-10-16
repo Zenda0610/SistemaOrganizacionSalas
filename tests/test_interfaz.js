@@ -394,6 +394,8 @@ const casos = [
     assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /2026-11-02 07:55/);
     assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Sala Blanca/);
     assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Clase de SER/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Solicitante/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /dev-profesor/);
     assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
   });
   await pruebaAsync("solicitudes: comercial indica pago pendiente sin verificar", async () => {
@@ -621,6 +623,51 @@ const casos = [
     botones[1].listeners.keydown({ key: "Home", preventDefault() {} });
     assert.strictEqual(botones[0].getAttribute("aria-selected"), "true");
     await new Promise(setImmediate);
+  });
+  await pruebaAsync("reubicación: evaluar no confirma y la coordinadora confirma explícitamente", async () => {
+    const vista = await escenario("coordinadora", { solicitud: { actividad: "zona_franca", tipo: "academica" } });
+    const plan = { id: "plan-test", estado: "propuesta", solicitud_id: 7, aula_origen: "Azul", aula_destino: "Blanca",
+      inicio: "2035-01-08 08:00", fin: "2035-01-08 10:00", personas: 8, solicitud_inicio: "2035-01-08 08:00" };
+    const devolver = vista.contexto.fetch;
+    const llamadas = [];
+    vista.contexto.fetch = (url, opciones) => {
+      llamadas.push(url);
+      if (url.endsWith("/reubicacion/proponer")) return respuestaJson(200, plan);
+      if (url.endsWith("/confirmar")) return respuestaJson(200, { ...plan, estado: "aplicada", autorizada_por: "coord", autorizada_en: "2034-01-01" });
+      return devolver(url, opciones);
+    };
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    const evaluar = botonesNodo(vista.elementos["solicitudes-registradas"]).find((b) => b.textContent.includes("Evaluar"));
+    await evaluar.listeners.click();
+    assert.ok(!llamadas.some((url) => url.endsWith("/confirmar")));
+    assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /Requiere autorización/);
+    const confirmar = botonesNodo(vista.elementos["reubicacion-propuesta"])[0];
+    const primera = confirmar.listeners.click();
+    await confirmar.listeners.click();
+    await primera;
+    assert.strictEqual(llamadas.filter((url) => url.endsWith("/confirmar")).length, 1);
+    assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /confirmadas/);
+    assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /Autorizada por coord/);
+  });
+  await pruebaAsync("reubicación: respuesta perdida exige consultar el estado sin repetir la confirmación", async () => {
+    const vista = await escenario();
+    const plan = { id: "plan-test", estado: "propuesta", solicitud_id: 7, aula_origen: "Azul", aula_destino: "Blanca",
+      inicio: "2035-01-08 08:00", fin: "2035-01-08 10:00", personas: 8 };
+    const devolver = vista.contexto.fetch;
+    let envios = 0;
+    vista.contexto.plan = plan;
+    vista.contexto.fetch = (url, opciones) => {
+      if (url.endsWith("/confirmar")) { envios += 1; throw new TypeError("respuesta perdida"); }
+      if (url === "/api/reubicaciones/plan-test") return respuestaJson(200, { ...plan, estado: "aplicada", autorizada_por: "coord", autorizada_en: "2034-01-01" });
+      return devolver(url, opciones);
+    };
+    vm.runInContext("pintarReubicacion(plan)", vista.contexto);
+    await botonesNodo(vista.elementos["reubicacion-propuesta"])[0].listeners.click();
+    assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /No se confirmó el resultado/);
+    const consultar = botonesNodo(vista.elementos["reubicacion-propuesta"]).find((b) => b.textContent === "Consultar reubicación");
+    await consultar.listeners.click();
+    assert.strictEqual(envios, 1);
+    assert.match(textoNodo(vista.elementos["reubicacion-propuesta"]), /confirmadas/);
   });
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);

@@ -1,5 +1,6 @@
 """Modelos Pydantic: espacio, sesión, cohorte, recurso, incidencia y registro rechazado."""
 import re
+import json
 from datetime import date
 from typing import Literal, Optional
 
@@ -7,6 +8,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 PATRON_HORA = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 TIPOS_SESION = ("clase", "reunion", "alquiler")
+
+
+def lista_elementos(valor):
+    lista = json.loads(valor) if isinstance(valor, str) else valor
+    if lista is not None and (not isinstance(lista, list) or len(lista) > 30 or
+                              any(not isinstance(e, str) or not e.strip() or len(e) > 100 for e in lista)):
+        raise ValueError("Los elementos deben ser una lista de nombres no vacíos (máximo 30).")
+    return lista
 
 
 class Espacio(BaseModel):
@@ -17,6 +26,12 @@ class Espacio(BaseModel):
     tipo: Literal["auditorio", "sala", "salon", "cubiculo"]
     aforo: int = Field(gt=0)
     estado: Literal["activo", "mantenimiento", "inhabilitado"]
+    elementos: list[str] | None = None  # None: inventario no suministrado, no equivale a vacío verificado
+
+    @field_validator("elementos", mode="before")
+    @classmethod
+    def leer_elementos(cls, valor):
+        return lista_elementos(valor)
 
 
 class Sesion(BaseModel):
@@ -35,6 +50,12 @@ class Sesion(BaseModel):
     cantidad_personas: int = Field(ge=0)
     responsable: str = Field(min_length=1)
     estado: Literal["programada", "cancelada"]
+    elementos_requeridos: list[str] = Field(default_factory=list)
+
+    @field_validator("elementos_requeridos", mode="before")
+    @classmethod
+    def leer_elementos(cls, valor):
+        return lista_elementos(valor)
 
     @field_validator("hora_inicio", "hora_fin")
     @classmethod

@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS importaciones (
     archivo TEXT,
     mensaje TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reubicaciones (
+    id TEXT PRIMARY KEY,
+    solicitud_id INTEGER NOT NULL,
+    datos TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('propuesta', 'aplicada')),
+    propuesta_por TEXT NOT NULL,
+    autorizada_por TEXT,
+    autorizada_en TEXT
+);
 """
 
 # Orden de borrado: primero las tablas hijas, para respetar las llaves foráneas.
@@ -126,6 +135,18 @@ def inicializar_base() -> None:
     con = conectar()
     try:
         con.executescript(ESQUEMA)
+        con.execute("BEGIN IMMEDIATE")
+        ampliaciones = {
+            "espacios": {"elementos": "TEXT"},
+            "sesiones": {"elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
+            "solicitudes": {"actividad": "TEXT NOT NULL DEFAULT 'otra'",
+                            "elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
+        }
+        for tabla, columnas in ampliaciones.items():
+            existentes = {fila[1] for fila in con.execute(f"PRAGMA table_info({tabla})")}
+            for campo, tipo in columnas.items():
+                if campo not in existentes:
+                    con.execute(f"ALTER TABLE {tabla} ADD COLUMN {campo} {tipo}")
         con.commit()
     finally:
         con.close()

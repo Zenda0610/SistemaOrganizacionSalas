@@ -23,7 +23,7 @@ ARCHIVO_ESPACIOS = "espacios.csv"
 ARCHIVO_SESIONES = "sesiones.csv"
 ARCHIVO_COHORTES = "cohortes.csv"
 
-CAMPOS_OPCIONALES = {"nivel"}
+CAMPOS_OPCIONALES = {"nivel", "elementos", "elementos_requeridos"}
 ALIAS_VALORES = {"cancelado": "cancelada", "programado": "programada"}
 CATALOGOS = {
     ARCHIVO_ESPACIOS: {
@@ -112,6 +112,10 @@ def _preparar_fila(datos: dict, catalogos: dict, correcciones: list) -> dict:
         fila["es_zona_franca"] = _si_no_a_booleano(fila["es_zona_franca"])
     if fila.get("nivel") == "":
         fila["nivel"] = None
+    if fila.get("elementos") == "":
+        fila["elementos"] = None
+    if fila.get("elementos_requeridos") == "":
+        fila["elementos_requeridos"] = []
     return fila
 
 
@@ -230,6 +234,7 @@ def _procesar(archivo, filas, validar: Callable, clave: Callable, catalogos: dic
 def _insertar_validos(con, tabla: str, archivo: str, validos: list) -> None:
     for item in validos:
         datos = {k: (v.isoformat() if isinstance(v, date) else v) for k, v in item["modelo"].model_dump().items()}
+        datos = {k: json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v for k, v in datos.items()}
         datos["archivo_origen"] = archivo
         datos["fila_origen"] = item["fila"]
         columnas = ", ".join(datos)
@@ -377,10 +382,10 @@ def _verificar_reservas_aprobadas(con) -> None:
     No cancela ni mueve reservas: solo informa.
     """
     reservas = con.execute(
-        "SELECT id, espacio_id, inicio, fin, personas FROM solicitudes WHERE estado = 'aprobada' ORDER BY id"
+        "SELECT id, espacio_id, inicio, fin, personas, elementos_requeridos FROM solicitudes WHERE estado = 'aprobada' ORDER BY id"
     ).fetchall()
     for reserva in reservas:
-        espacio = con.execute("SELECT aforo, estado FROM espacios WHERE id = ?", (reserva["espacio_id"],)).fetchone()
+        espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (reserva["espacio_id"],)).fetchone()
         motivo = archivo = None
         if espacio is None:
             motivo, archivo = "ya no tiene espacio en espacios.csv", ARCHIVO_ESPACIOS
@@ -388,6 +393,8 @@ def _verificar_reservas_aprobadas(con) -> None:
             motivo, archivo = "su espacio no está activo en espacios.csv", ARCHIVO_ESPACIOS
         elif reserva["personas"] > espacio["aforo"]:
             motivo, archivo = f"supera el aforo de {espacio['aforo']} que tendría el espacio en espacios.csv", ARCHIVO_ESPACIOS
+        elif not solicitudes.elementos_compatibles(dict(espacio), json.loads(reserva["elementos_requeridos"])):
+            motivo, archivo = "no tiene sus elementos requeridos verificados", ARCHIVO_ESPACIOS
         else:
             cruces = [c for c in solicitudes.buscar_conflictos(
                 con, reserva["espacio_id"], reserva["inicio"], reserva["fin"], excluir_id=reserva["id"])

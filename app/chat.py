@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import db, ia, reglas, solicitudes
+from app import db, ia, reglas, solicitudes, reubicaciones
 from app.identidad import Identidad
 from app.permisos import tipo_solicitud_para
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 ACCIONES = ("solicitar_aula", "confirmar", "cancelar", "consultar_disponibilidad", "ver_solicitudes")
 MAX_MENSAJE = 500
 PATRON_HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-ALIAS_AULAS = {"skilab": "E03", "spooki": "E04", "amarillas verdes": "E09",
-               "blanca": "E07", "azul": "E08"}
 
 
 class ErrorChat(Exception):
@@ -68,20 +66,23 @@ def _normalizar(texto: str) -> str:
 
 
 def _catalogo() -> list[dict]:
-    return db.consultar("SELECT id, nombre, aforo, estado FROM espacios ORDER BY id")
+    return db.consultar("SELECT id, nombre, aforo, estado, elementos FROM espacios ORDER BY id")
 
 
 def resolver_espacio(texto: str, catalogo: list[dict]) -> tuple[str, object]:
     """Devuelve ("ok", espacio), ("ambiguo", [nombres]) o ("no_existe", None). Nunca inventa un ID."""
     buscado = _normalizar(texto)
-    if buscado in ALIAS_AULAS:
-        espacio = next((e for e in catalogo if e["id"] == ALIAS_AULAS[buscado]), None)
-        return ("ok", espacio) if espacio is not None else ("no_existe", None)
     exactos = [e for e in catalogo if _normalizar(e["nombre"]) == buscado or e["id"].lower() == buscado]
     if len(exactos) == 1:
         return "ok", exactos[0]
     if len(exactos) > 1:
         return "ambiguo", [e["nombre"] for e in exactos]
+    equivalentes = next((grupo for grupo in reglas.ALIAS_AULAS if buscado in grupo), set())
+    alias = [e for e in catalogo if _normalizar(e["nombre"]) in equivalentes]
+    if len(alias) == 1:
+        return "ok", alias[0]
+    if alias:
+        return "ambiguo", [e["nombre"] for e in alias]
     if len(buscado) < 3:
         return "no_existe", None
     parciales = [e for e in catalogo
@@ -243,8 +244,18 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
         return _respuesta("faltan_datos", f"El horario no es válido: {error} Indique de nuevo la hora de inicio y de fin.")
 
     personas = datos["personas"]
-    candidatos = reglas.ordenar_candidatos(
-        solicitudes.espacios_disponibles(ini, fin, personas), datos.get("es_zona_franca", False))
+    requeridos = datos.get("elementos_requeridos", [])
+    candidatos = solicitudes.espacios_disponibles(ini, fin, personas, requeridos)
+    # Azul puede proponerse pendiente de una reubicación explícita, nunca como disponibilidad libre.
+    if datos.get("es_zona_franca") and datos.get("permite_reubicacion"):
+        with db.transaccion() as con:
+            for aula in _catalogo():
+                if reglas.es_azul(aula) and aula["estado"] == "activo" and aula["aforo"] >= personas and solicitudes.elementos_compatibles(aula, requeridos):
+                    prueba = {"espacio_id": aula["id"], "inicio": _fmt(ini), "fin": _fmt(fin), "tipo": "academica", "actividad": "zona_franca"}
+                    origen = reubicaciones.origen_ser(con, prueba)
+                    if origen and datetime.fromisoformat(origen["inicio"]) > datetime.now() and ini > datetime.now():
+                        candidatos.append({**aula, "requiere_reubicacion": True})
+    candidatos = reglas.ordenar_candidatos(candidatos, datos.get("es_zona_franca", False))
     pedido = datos.get("espacio_id")
     motivo = None
     elegido = None
@@ -261,17 +272,21 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
             texto = f"{motivo}. {texto}"
         return _respuesta("sin_disponibilidad", texto)
 
-    datos.update(propuesta_id=elegido["id"], propuesta_nombre=elegido["nombre"])
+    datos.update(propuesta_id=elegido["id"], propuesta_nombre=elegido["nombre"],
+                 requiere_reubicacion=elegido.get("requiere_reubicacion", False))
     if pedido and elegido["id"] != pedido:
         intro = f"{motivo}. Alternativa disponible: {elegido['nombre']}."
     elif pedido:
         intro = f"Propuesta: {elegido['nombre']}."
     else:
         intro = f"Aula propuesta: {elegido['nombre']} ({len(candidatos)} libre(s) con ese horario y aforo)."
+    if datos["requiere_reubicacion"]:
+        intro = f"Propuesta: {elegido['nombre']}. Está ocupada por SER; requiere evaluar y confirmar una reubicación por la coordinadora. No es una reserva libre."
     _guardar_borrador(usuario_id, conversacion_id, "propuesta", datos, esperado)
     resumen = {"espacio_id": elegido["id"], "nombre": elegido["nombre"], "fecha": datos["fecha"],
                "inicio": datos["inicio"], "fin": datos["fin"], "personas": personas,
                "descripcion": datos["descripcion"]}
+    resumen["requiere_reubicacion"] = datos["requiere_reubicacion"]
     return _respuesta(
         "propuesta",
         f"{intro} {datos['fecha']} de {datos['inicio']} a {datos['fin']}, {personas} persona(s), "
@@ -284,8 +299,9 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
 
 def _solicitar(identidad: Identidad, conversacion_id: str, borrador: dict, parametros: dict,
                mensaje: str = "") -> dict:
-    tipo_solicitud_para(identidad.rol)  # 403 antes de cualquier otro cambio
+    tipo = tipo_solicitud_para(identidad.rol)  # 403 antes de cualquier otro cambio
     datos = {} if borrador["estado"] in ("creada", "cancelado") else dict(borrador["datos"])
+    datos["permite_reubicacion"] = tipo == "academica"
     fecha = _fecha(parametros.get("fecha"))
     if fecha:
         datos["fecha"] = fecha
@@ -306,6 +322,17 @@ def _solicitar(identidad: Identidad, conversacion_id: str, borrador: dict, param
         datos["es_zona_franca"] = zona_franca is True or "zona franca" in _normalizar(descripcion)
     if "zona franca" in _normalizar(mensaje):
         datos["es_zona_franca"] = True
+    actividad = parametros.get("actividad")
+    if actividad in ("zona_franca", "ser", "ingles", "otra"):
+        datos["actividad"] = actividad
+        datos["es_zona_franca"] = actividad == "zona_franca"
+    elif descripcion:
+        datos["actividad"] = reglas.actividad_desde_texto(descripcion)
+    if datos.get("es_zona_franca"):
+        datos["actividad"] = "zona_franca"
+    elementos = parametros.get("elementos_requeridos")
+    if isinstance(elementos, list) and len(elementos) <= 30 and all(isinstance(e, str) and e.strip() for e in elementos):
+        datos["elementos_requeridos"] = elementos
 
     nombre = _texto(parametros.get("espacio"), 80)
     if nombre:
@@ -341,11 +368,20 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
                 raise _Revisar("el aula ya no está disponible")
             if datos["personas"] > espacio["aforo"]:
                 raise _Revisar("el aforo ya no alcanza")
-            if solicitudes.buscar_conflictos(con, espacio["id"], _fmt(ini), _fmt(fin)):
+            if not solicitudes.elementos_compatibles(dict(espacio), datos.get("elementos_requeridos", [])):
+                raise _Revisar("los elementos requeridos no están verificados")
+            cruzada = solicitudes.buscar_conflictos(con, espacio["id"], _fmt(ini), _fmt(fin))
+            elegible = False
+            if datos.get("requiere_reubicacion") and identidad.rol in ("profesor", "administrativo"):
+                origen = reubicaciones.origen_ser(con, {"espacio_id": espacio["id"], "inicio": _fmt(ini), "fin": _fmt(fin),
+                    "tipo": "academica", "actividad": datos.get("actividad", "otra")})
+                elegible = origen is not None and datetime.fromisoformat(origen["inicio"]) > datetime.now() and ini > datetime.now()
+            if cruzada and not elegible:
                 raise _Revisar("el aula se ocupó antes de confirmar")
             nuevo_id = solicitudes.crear_en(con, identidad, NuevaSolicitud(
                 espacio_id=espacio["id"], inicio=ini, fin=fin, personas=datos["personas"],
-                descripcion=datos["descripcion"]))
+                descripcion=datos["descripcion"], actividad=datos.get("actividad", "otra"),
+                elementos_requeridos=datos.get("elementos_requeridos", [])))
             datos["solicitud_id"] = nuevo_id
             con.execute("UPDATE borradores_chat SET estado = 'creada', datos = ?, "
                         "actualizado_en = datetime('now', 'localtime') "
@@ -404,12 +440,14 @@ def _prompt(mensaje: str, borrador: dict) -> str:
         f"Hoy es {date.today().isoformat()}. Responde SOLO con un objeto JSON con las claves "
         '"accion" y "parametros". Acciones permitidas: '
         '"solicitar_aula" (parametros: espacio con el nombre dicho por el usuario o vacío, fecha AAAA-MM-DD, '
-        'inicio y fin HH:MM, personas número o null, descripcion o null, es_zona_franca booleano o null); '
+        'inicio y fin HH:MM, personas número o null, descripcion o null, es_zona_franca booleano o null, '
+        'actividad zona_franca/ser/ingles/otra o null, elementos_requeridos lista de nombres explícitos o null); '
         f"{pendiente}"
         '"confirmar" (parametros {}) solo si el usuario acepta explícitamente la propuesta pendiente; '
         '"cancelar" (parametros {}); "consultar_disponibilidad" (parametros: inicio y fin AAAA-MM-DDTHH:MM); '
         '"ver_solicitudes" (parametros {}). Otra petición usa "accion": "no_soportada". '
         "No inventes personas, horas ni identificadores. "
+        "No inventes equipamiento; extrae solo elementos requeridos expresamente. No apruebes ni reubiques actividades. "
         'Si menciona una actividad como "clase de SER", "clase de inglés" o "reunión", '
         'úsala como "descripcion" si no hay otra más específica. '
         'Indica es_zona_franca true si la actividad es de Zona Franca, false si especifica otra área '

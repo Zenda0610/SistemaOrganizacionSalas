@@ -1,6 +1,6 @@
 # Sistema Central de Gestión Operativa de Campuslands
 
-> Todos los datos de este repositorio son **ficticios**. Los nombres de personas, grupos, clientes y cohortes fueron inventados para pruebas y no corresponden a registros reales.
+> El catálogo de demostración usa los **nombres y capacidades confirmados por operación**. Sus IDs y estados son de demostración; no representan una base oficial. No se inventan equipamiento ni ocupaciones. Las personas, grupos, clientes, cohortes y reservas usados en pruebas son ficticios y se aíslan de la demostración.
 
 ## Estado
 
@@ -10,7 +10,8 @@
 - **Solicitudes de aulas (provisional):** en la rama `feat/solicitudes-aulas`. Disponibilidad, solicitud pendiente, aprobación validada y calendario de reservas. Sin pagos verificados.
 - **Interfaz de solicitudes:** pestaña propia para consultar solicitudes y aprobar como coordinadora. Actualiza el calendario y las fechas disponibles, manteniendo la identidad de desarrollo configurada en el servidor.
 - **Frontend de consulta:** Calendario y asistente juntos en escritorio, apilados en móvil; navegación Calendario · Solicitudes · Aulas · Datos. Consulta de cualquier fecha, historial de conversación y tarjetas de propuesta.
-- **Fase 2:** pendiente. Reglas de negocio, reservas, préstamos, incidencias y triaje con IA.
+- **Prioridades y reubicación:** prioridad académica igual para Zona Franca, SER e inglés; comercial inferior. Reubicación específica de SER desde Azul para Zona Franca, propuesta y confirmada por coordinadora, con transacción y auditoría.
+- **Pendiente:** usuarios oficiales, programación oficial, préstamo de equipos, incidencias, triaje y registro de entrega/devolución física.
 
 ## Problema
 
@@ -51,12 +52,20 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 Una respuesta 200 solo se muestra como importación correcta si cumple el contrato: `ok` es `true`, `cargados` es un objeto con conteos enteros no negativos y `conflictos` es un entero no negativo. Cualquier otra forma se trata como resultado desconocido.
 - El arranque de la aplicación no importa datos. La importación es explícita.
 
-### Reglas de negocio (fase 2, pendientes)
+### Reglas de prioridad vigentes
 
 - Una reserva o préstamo no puede cruzarse con una sesión programada.
-- Zona Franca tiene prioridad sobre los alquileres.
+- Zona Franca, SER e inglés tienen igual prioridad general. Las solicitudes académicas se listan antes que las comerciales; no se aprueba una comercial si hay una académica pendiente que se solape en la misma aula. No se cancelan ni desplazan alquileres ya aprobados automáticamente.
 - No se alquilan espacios en mantenimiento o inhabilitados.
-- Los umbrales se definirán como variables de entorno en `app/config.py`.
+- La preferencia de Azul para Zona Franca es específica y se reconoce por el nombre verificado del catálogo, nunca por un ID ficticio.
+
+### Catálogo y fixtures
+
+`data/ficticio/` es ahora la demostración limpia: nueve aulas (Auditorio 100, Cosmos 25, Skilab 20, Spooki 38, Apolo 34, Blanca 12, Azul 10, Amarillas verdes 6 y Artemis 32). **Amarillas verdes es una sola sala.** Sesiones y cohortes contienen solo encabezados; no hay horarios ni equipos inventados. Los IDs `DEMO-*` y el estado activo sirven exclusivamente para la demostración.
+
+Los CSV antiguos con duplicados, aforo vacío, conflictos, personas y fechas ficticias se conservan íntegros en `tests/fixtures/defectuosos/`. Las pruebas históricas cargan ese directorio, no el catálogo de demostración. Una base existente no se borra ni se reasignan sus IDs al iniciar; la recarga incompatible con reservas se rechaza y conserva los datos anteriores.
+
+Los inventarios son opcionales: la columna CSV `elementos` admite una lista JSON de nombres verificados y puede faltar (`null`: desconocido). Sesiones admiten `elementos_requeridos` como lista JSON. Las solicitudes aceptan esa misma lista por API/chat. Requerir un elemento con inventario desconocido se rechaza; no se presupone su existencia. Los nuevos campos se añaden al iniciar con una migración aditiva que conserva solicitudes y borradores anteriores.
 
 ## Identidad y permisos
 
@@ -98,7 +107,7 @@ Pendiente de definir: qué lecturas requieren identidad y el esquema oficial de 
 - **Recarga compatible con reservas:** antes de confirmar, la importación verifica cada reserva aprobada contra los datos entrantes: que el espacio exista y esté activo, que el aforo alcance y que no se cruce con una sesión programada. Si alguna falla, se rechaza toda la importación con `reserva_incompatible` (409) y la base queda como estaba. El sistema no cancela ni mueve reservas; la incompatibilidad se resuelve antes de importar.
 
 **Pendiente de definir:**
-- Reubicaciones y flujo comercial completo (pago, tarifas, rechazo de solicitudes).
+- Flujo comercial completo (pago, tarifas, rechazo de solicitudes) y reubicaciones fuera del caso específico SER/Azul/Zona Franca.
 - Registro de entrega o devolución física del aula; por ahora solo se calcula y muestra la hora prevista.
 
 ## Chat de solicitudes
@@ -107,8 +116,8 @@ Pendiente de definir: qué lecturas requieren identidad y el esquema oficial de 
 
 - `POST /api/chat` con `{"mensaje": "...", "conversacion_id": "..."}`. La IA extrae datos y propone una acción de una lista cerrada: `solicitar_aula`, `confirmar`, `cancelar`, `consultar_disponibilidad` o `ver_solicitudes`.
 - **Borrador:** cada usuario tiene un borrador por conversación. Guarda fecha, horario, personas, motivo, aula y la propuesta vigente. Nunca se comparte entre usuarios ni entre conversaciones.
-- **Aulas por nombre:** el servidor resuelve el nombre contra el catálogo. Alias operativos: Skilab → E03, Spooki → E04, Amarillas verdes → E09, Blanca → E07 y Azul → E08. Solo se resuelven si el ID existe; no se modifican los CSV ficticios. Un nombre ambiguo o inexistente pide aclarar; la IA nunca envía IDs.
-- **Sin aula elegida:** las candidatas ya están filtradas por disponibilidad y aforo. Se ordenan por menor aforo suficiente e ID, dejando E08 al final salvo para Zona Franca, que la prefiere cuando está disponible y alcanza el aforo. Un aula elegida explícitamente y válida se respeta. Esta preferencia conserva el trabajo local autorizado antes del incremento de interfaz; no reubica ni desplaza reservas.
+- **Aulas por nombre:** primero se comparan nombres e IDs exactos del catálogo cargado. Después se admiten equivalencias Skilab/Skylab, Spooki/Sputnik, Blanca/Sala Blanca y Azul/Sala Azul, únicamente si existe una entrada verificable por ese nombre. Amarillas verdes solo se resuelve contra su entrada real, nunca se asume que es un antiguo cubículo. Una coincidencia ambigua pide aclaración. La IA no elige IDs.
+- **Sin aula elegida:** las candidatas se filtran por disponibilidad, aforo y elementos requeridos. Se ordenan por menor aforo e ID, dejando Azul al final salvo para Zona Franca. Se respeta un aula explícita válida. Si Azul está ocupada solo por SER futuro, el chat puede proponerla **condicionada a reubicación**; informa que no está libre y confirmar solo crea una solicitud pendiente. No mueve SER ni aprueba nada.
 - **Actividad:** el prompt indica usar actividades como clase de SER, clase de inglés o reunión como motivo si no hay otro más específico. Zona Franca se reconoce por el parámetro booleano de la IA o por su mención en mensaje o descripción; se conserva en el borrador para las reevaluaciones. Esto solo orienta la selección y no cambia permisos.
 - **Datos faltantes:** se pregunta lo que falta, sin inventar personas ni horas.
 - **Confirmación:** crear exige confirmación explícita de la propuesta vigente. Antes de crear, el servidor vuelve a validar estado, aforo y solapamientos dentro de una transacción. Si el aula se ocupó, se propone otra y no se crea nada.
@@ -137,12 +146,62 @@ La identidad es global al proceso. Este recorrido aún requiere configurar y rei
 - **Navegación accesible:** las pestañas tienen nombre, panel asociado y selección ARIA; flechas izquierda/derecha y Home/End cambian sección y foco. Los controles tienen foco visible y los estados se anuncian. Cohortes y Calidad de datos se agrupan bajo Datos.
 - El historial y la conversación no se recuperan al recargar la página. Siguen pendientes la identidad oficial, los datos oficiales y la validación con un proveedor de IA real autorizado.
 
+### Reubicación autorizada por coordinadora
+
+1. Una solicitud académica pendiente de Zona Franca pide Azul. Si SER es el único bloqueo, la coordinadora pulsa **Evaluar reubicación de SER** en Solicitudes. Se busca una alternativa para **todo el intervalo** de SER y se guarda la propuesta sin cambiar la ocupación.
+2. Se muestran aula original y destino, horario y asistentes. Solo **Confirmar reubicación y aprobar Zona Franca** modifica los datos. Se admiten tanto una reserva de SER aprobada como una sesión SER programada.
+3. Dentro de `BEGIN IMMEDIATE` se comprueban la solicitud y actividad originales contra la instantánea, horario futuro, disponibilidad, estado activo, aforo e inventario requerido de ambas actividades. Se mueve SER y se aprueba Zona Franca juntos, o se revierte todo. No se mueve una actividad que ya empezó; la confirmación vuelve a comprobar la hora.
+4. La tabla `reubicaciones` conserva propuesta, origen, destino, instantáneas, coordinadora y hora de autorización. Confirmar el mismo ID otra vez devuelve la operación aplicada sin repetir el cambio. Una propuesta desactualizada requiere reevaluación; un destino ocupado o sin aforo/elementos impide confirmar. Sin alternativa, se conserva la reserva original y se informa el conflicto.
+
+API solo para coordinadora: `POST /api/solicitudes/{id}/reubicacion/proponer`, `POST /api/reubicaciones/{id}/confirmar`, `GET /api/reubicaciones/{id}`. Ante una respuesta perdida, la interfaz pide consultar esa operación antes de repetir. No hay desplazamientos automáticos, cadenas de reubicación, ni desplazamiento de inglés, Zona Franca o comercial mediante esta excepción. La entrega/devolución física sigue pendiente.
+
 ### Pendientes después del recorrido de solicitudes
 
-- **Prioridades:** siguen pendientes como flujo de dominio. La preferencia de selección de Sala Azul conservada del trabajo anterior no resuelve prioridades entre solicitudes o reservas. Antes de implementarlas hay que definir qué actividades tienen precedencia, quién puede aplicarla y qué hacer si el aula ya está ocupada. No se desplazan reservas automáticamente.
-- **Reubicación:** definir quién la solicita y autoriza, qué alternativas son aceptables y cómo se confirma el cambio. Harán falta una operación transaccional que revalide aforo y conflictos, trazabilidad y pruebas; no hay botón ni endpoint de reubicación actualmente.
+- **Prioridades adicionales:** no se han definido excepciones para desplazar otras actividades ya aprobadas, ni cancelaciones automáticas. Las actividades académicas mantienen igual prioridad general.
+- **Reubicación general:** quedan fuera los cambios de horario, múltiples bloqueos, cadenas y otras actividades distintas del caso SER/Azul/Zona Franca.
 - **Entrega/devolución:** definir responsables, estados, registro de horas reales y tratamiento de retrasos. Mostrar `fin - 5 minutos` es únicamente una hora prevista; no registra una entrega ni una devolución y no libera ocupación antes de `fin`.
 - **Integración real:** obtener y validar catálogo/aforos y programación oficiales, implementar identidad oficial por usuario y configurar un proveedor de IA autorizado para probar mensajes variados. La identidad actual sigue siendo global al servidor y los datos de prueba son ficticios. No hay pago verificado, tarifas ni indicadores de ocupación inventados.
+
+## OpenRouter: dónde colocar la clave
+
+Se preparó `.env.example` y un `.env` local nuevo, sin sobrescribir archivos existentes. **Solo falta rellenar `IA_API_KEY`** en:
+
+`C:\Users\david\OneDrive\Desktop\Hackaton\SistemaOrganizacionSalas\.env`
+
+La clave va únicamente después de `IA_API_KEY=` en ese archivo. No se pega en el chat, en el navegador ni en comandos compartidos. `.env`, `.venv/` y bases locales están excluidos de Git. El backend utiliza la clave en Authorization; la API y el frontend no la devuelven y los errores del cliente de IA no registran credenciales.
+
+Configuración preparada:
+
+```dotenv
+IA_PROVEEDOR=openai
+IA_URL=https://openrouter.ai/api/v1
+IA_MODELO=nvidia/nemotron-3.5-super-vl:free
+IA_API_KEY=
+IA_TIMEOUT_SEGUNDOS=60
+```
+
+Modelo seleccionado: [NVIDIA Nemotron 3.5 Super VL (free)](https://openrouter.ai/nvidia/nemotron-3.5-super-vl:free). Consulta del [catálogo oficial en vivo](https://openrouter.ai/api/v1/models) el 16 de octubre de 2026: precio de entrada y salida cero; no se encontró ningún DeepSeek `:free` en ese catálogo, aunque existen páginas de variantes anteriores. Se eligió Nemotron conforme a la alternativa autorizada. La gratuidad no garantiza disponibilidad ni ausencia de límites de uso.
+
+El cliente conserva `/chat/completions`, exige `:free` para OpenRouter, comprueba que el ID siga disponible con precios cero antes de inferir y envía un límite de precio cero sin fallback. No cambia de modelo automáticamente; si lo retiran, deja un error en lugar de usar uno de pago. La salud solo verifica catálogo/configuración; no acredita inferencia ni validez de la clave.
+
+El entorno `.venv` está preparado con Python 3.12.14 y las dependencias fijadas. Iniciar o reiniciar en PowerShell (detener primero con Ctrl+C):
+
+```powershell
+Set-Location 'C:\Users\david\OneDrive\Desktop\Hackaton\SistemaOrganizacionSalas'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+La identidad inicial de la plantilla es `dev-profesor`, rol `profesor`. Para probar el otro rol, detener el servidor y volver a iniciarlo en otra consola con `$env:USUARIO_DESARROLLO='dev-coordinadora'` y `$env:ROL_DESARROLLO='coordinadora'`, conservando la base. Son identidades de desarrollo, no autenticación. Al volver a profesor, quitar esas variables de proceso o cerrar esa consola; el `.env` conserva su identidad original.
+
+En una base nueva, cargar explícitamente el catálogo de demostración una sola vez con `.\.venv\Scripts\python.exe -m app.carga_datos`. La carga no ocurre automáticamente al reiniciar.
+
+Comprobar la configuración sin mostrar la clave:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from app import config; print('Proveedor:',config.IA_PROVEEDOR); print('Modelo:',config.IA_MODELO); print('Clave configurada:',bool(config.IA_API_KEY))"
+```
+
+Después de rellenar la clave y reiniciar, ejecutar `.\.venv\Scripts\python.exe -m unittest tests.test_chat.PruebaInferenciaReal -v` para probar inferencia real y consultar `http://127.0.0.1:8000/api/ia/salud` para el catálogo. La prueba se omite si falta configuración. Hasta disponer de la clave no se afirma que el proveedor haya inferido mensajes ni se presenta un mock como respuesta real.
 
 ## Instalación
 
@@ -194,6 +253,10 @@ En navegador real se comprobaron el escritorio y un viewport móvil de 390 × 84
 La comprobación posterior a `f2e5dce` conserva los commits locales existentes (el remoto revisado sigue en `7287d88`). La prueba integrada comienza consultando disponibilidad por chat con IA simulada, crea y confirma la solicitud, repite la confirmación sin duplicar, rechaza aprobación como profesor, aprueba como coordinadora y comprueba calendario y disponibilidad final. Los otros casos cubren propuesta modificada antes de confirmar, carreras de fecha y aprobación rechazada sin cambiar el pendiente. No acredita inferencia real ni operación con datos oficiales.
 
 Reejecución de cierre: 103 pruebas Python (102 satisfactorias, una omitida por falta de proveedor) y 58 comprobaciones de interfaz con DOM/HTTP simulados; sintaxis JavaScript y Pyflakes sin errores. En navegador real, con otra base SQLite temporal, una aprobación con solapamiento mostró el error y siguió pendiente después de actualizar desde la API; una segunda solicitud sin conflicto se aprobó y apareció en el calendario 24/7 para su fecha nueva. Se conservaron las capturas de escritorio y móvil de la misma versión del frontend. El recorrido completo con mensajes interpretados por IA real permanece bloqueado por falta de configuración.
+
+Validación del incremento de catálogo, OpenRouter y reubicación desde `df55244`: **127 pruebas Python, 126 satisfactorias y una de inferencia real omitida por falta de IA_API_KEY**, y **60 comprobaciones de interfaz con DOM/HTTP simulados**, todas satisfactorias. Sintaxis JavaScript, Pyflakes y comprobación del diff sin errores. Se verifican IDs ajenos al dataset, alias ambiguos, catálogo limpio, migración repetida sobre una base anterior, prioridad comercial inferior, transacción/rollback, doble confirmación concurrente, propuestas desactualizadas, actividad iniciada, ausencia de alternativas, aforo/equipamiento cambiados, sesiones SER y reservas nocturnas. Los tests de OpenRouter simulan HTTP y comprueban que no se infiere sin clave, con modelo retirado o de pago; no acreditan inferencia real.
+
+En navegador real (escritorio y móvil 390 × 844), sobre SQLite temporal y datos de prueba aislados, se mostró el solicitante autorizado; la aprobación normal de Zona Franca en Azul falló por solapamiento; evaluar propuso Blanca para SER sin moverla; confirmar movió SER a Blanca y aprobó Zona Franca en Azul, registrando `dev-coordinadora` y la hora. Listado y calendario mostraron ambas reservas, sin desbordamiento horizontal del documento en móvil. Las ocupaciones se sembraron solo para esta prueba, no se añadieron al catálogo de demostración. El navegador informó la falta de IA_API_KEY: sigue pendiente ejecutar mensajes variados y el recorrido completo con Nemotron real después de que el usuario coloque su clave.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
 </content>
