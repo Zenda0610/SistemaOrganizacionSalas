@@ -87,6 +87,16 @@ CREATE TABLE IF NOT EXISTS solicitudes (
     decidida_en TEXT,
     CHECK (fin > inicio)
 );
+-- Borrador del chat: pertenece a un usuario y a una conversación. Nunca se comparte.
+CREATE TABLE IF NOT EXISTS borradores_chat (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id TEXT NOT NULL,
+    conversacion_id TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('en_curso', 'propuesta', 'creada', 'cancelado')),
+    datos TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (usuario_id, conversacion_id)
+);
 CREATE TABLE IF NOT EXISTS importaciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha_hora TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),

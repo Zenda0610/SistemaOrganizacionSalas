@@ -449,7 +449,12 @@ async function cargarEstadoIA() {
 
 // --- Chat de solicitudes --------------------------------------------------------
 
-const ESTADOS_CHAT_CORRECTOS = new Set(["consulta", "solicitud_creada", "solicitudes"]);
+const ESTADOS_CHAT_CORRECTOS = new Set(["consulta", "propuesta", "solicitud_creada", "solicitudes", "ya_creada"]);
+
+// Identificador de la conversación de esta pestaña: separa los borradores de cada conversación.
+const CONVERSACION_ID = typeof crypto !== "undefined" && crypto.randomUUID
+  ? crypto.randomUUID()
+  : `c${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
 async function enviarChat(evento) {
   evento.preventDefault();
@@ -464,7 +469,7 @@ async function enviarChat(evento) {
     const datos = await pedir("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensaje: texto }),
+      body: JSON.stringify({ mensaje: texto, conversacion_id: CONVERSACION_ID }),
     });
     respuesta.className = `resultado estado-${ESTADOS_CHAT_CORRECTOS.has(datos.estado) ? "ok" : "vacio"}`;
     respuesta.textContent = datos.respuesta;

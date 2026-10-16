@@ -97,13 +97,18 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 
 ## Chat de solicitudes
 
-**Estado: provisional, sin verificar la inferencia real.** Requiere un proveedor de IA configurado, y en el desarrollo actual no lo hay.
+**Estado: provisional. La inferencia real no está verificada:** no hay proveedor de IA configurado en el desarrollo actual. Las pruebas simulan la respuesta de la IA en el punto de llamada.
 
-- `POST /api/chat` con `{"mensaje": "..."}`. La IA interpreta el texto y propone una acción de una lista cerrada: `consultar_disponibilidad`, `crear_solicitud` o `ver_solicitudes`.
-- La identidad y el rol salen del servidor. El texto del mensaje no puede cambiarlos, y los parámetros propuestos se validan con los mismos modelos de la API de solicitudes.
-- Aprobar **no** es una acción del chat. La aprobación sigue siendo solo de la coordinadora, por la API.
-- Si la IA no responde, el chat devuelve 503 `ia_no_disponible` y no ejecuta nada. El detalle técnico va al log, no al cliente.
-- Las pruebas simulan la IA en el punto de llamada. La prueba de inferencia real se omite si el proveedor no está configurado.
+- `POST /api/chat` con `{"mensaje": "...", "conversacion_id": "..."}`. La IA extrae datos y propone una acción de una lista cerrada: `solicitar_aula`, `confirmar`, `cancelar`, `consultar_disponibilidad` o `ver_solicitudes`.
+- **Borrador:** cada usuario tiene un borrador por conversación. Guarda fecha, horario, personas, motivo, aula y la propuesta vigente. Nunca se comparte entre usuarios ni entre conversaciones.
+- **Aulas por nombre:** el servidor resuelve el nombre contra el catálogo. Un nombre ambiguo o inexistente pide aclarar; la IA nunca envía IDs.
+- **Sin aula elegida:** el servidor busca la primera aula libre con el horario y el aforo, y la propone.
+- **Datos faltantes:** se pregunta lo que falta, sin inventar personas ni horas.
+- **Confirmación:** crear exige confirmación explícita de la propuesta vigente. Antes de crear, el servidor vuelve a validar estado, aforo y solapamientos dentro de una transacción. Si el aula se ocupó, se propone otra y no se crea nada.
+- **Sin duplicados:** una segunda confirmación devuelve `ya_creada`. Las confirmaciones simultáneas crean una sola solicitud.
+- La identidad y el rol salen del servidor. La aprobación no es una acción del chat: sigue siendo solo de la coordinadora, por la API.
+- Si la IA no responde, el chat devuelve 503 `ia_no_disponible` y no cambia ningún borrador ni crea nada.
+- La prueba de inferencia real (`PruebaInferenciaReal`) se omite mientras no haya proveedor configurado.
 
 ## Instalación
 

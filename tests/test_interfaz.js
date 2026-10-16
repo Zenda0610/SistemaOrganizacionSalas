@@ -39,7 +39,10 @@ function cargarInterfaz(respuestaImportacion) {
     console,
     Option: function Option() {},
     fetch: async (url, opciones = {}) => {
-      if (opciones.method === "POST") return respuestaImportacion();
+      if (opciones.method === "POST") {
+        contexto.ultimoCuerpo = opciones.body;
+        return respuestaImportacion();
+      }
       if (url.endsWith("/sesion")) return respuestaJson(200, { usuario_id: "dev-prueba", rol: "coordinadora", origen: "desarrollo" });
       return respuestaJson(200, []);
     },
@@ -267,10 +270,12 @@ const casos = [
     assert.strictEqual(bloquesEnCelda(pintar("2026-10-20", [cancelada], []), 32).length, 0);
   });
   // Chat: el texto de error o de éxito viene del servidor y se muestra tal cual.
+  let ultimoCuerpoChat = null;
   const chatCon = async (respuestaChat) => {
     const interfaz = cargarInterfaz(respuestaChat);
     interfaz.contexto.document.getElementById("entrada-chat").value = "reserve el auditorio";
     await vm.runInContext("enviarChat({ preventDefault() {} })", interfaz.contexto);
+    ultimoCuerpoChat = JSON.parse(interfaz.contexto.ultimoCuerpo);
     return interfaz.contexto.document.getElementById("respuesta-chat").textContent;
   };
   try {
@@ -284,6 +289,8 @@ const casos = [
   try {
     const texto = await chatCon(() => respuestaJson(200, { estado: "solicitud_creada", respuesta: "Solicitud 7 creada en estado pendiente (academica).", datos: [] }));
     assert.strictEqual(texto, "Solicitud 7 creada en estado pendiente (academica).");
+    assert.strictEqual(ultimoCuerpoChat.mensaje, "reserve el auditorio");
+    assert.ok(ultimoCuerpoChat.conversacion_id.length >= 8);
     console.log("ok   - chat: solicitud creada se muestra con el texto del servidor");
   } catch (error) {
     fallos += 1;

@@ -104,26 +104,34 @@ def _solicitud(solicitud_id: int) -> dict:
 
 
 def crear_solicitud(identidad: Identidad, datos: NuevaSolicitud) -> dict:
+    with db.transaccion() as con:
+        nuevo_id = crear_en(con, identidad, datos)
+    return _solicitud(nuevo_id)
+
+
+def obtener_solicitud(solicitud_id: int) -> dict:
+    return _solicitud(solicitud_id)
+
+
+def crear_en(con, identidad: Identidad, datos: NuevaSolicitud) -> int:
+    """Inserta una solicitud pendiente dentro de la transacción recibida. Devuelve su ID."""
     tipo = tipo_solicitud_para(identidad.rol)  # 403 si el rol no puede solicitar aulas
     comercial = tipo == "comercial"
-    inicio, fin = _texto(datos.inicio), _texto(datos.fin)
-    with db.transaccion() as con:
-        espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos.espacio_id,)).fetchone()
-        if espacio is None:
-            raise ErrorSolicitud(404, "espacio_no_encontrado", "No existe el espacio indicado.")
-        if espacio["estado"] != "activo":
-            raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
-        if datos.personas > espacio["aforo"]:
-            raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
-        cursor = con.execute(
-            "INSERT INTO solicitudes (espacio_id, inicio, fin, personas, descripcion, tipo, solicitante_id, "
-            "rol_solicitante, estado, requiere_pago, estado_pago) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?)",
-            (datos.espacio_id, inicio, fin, datos.personas, datos.descripcion, tipo,
-             identidad.usuario_id, identidad.rol, int(comercial), "pendiente" if comercial else None),
-        )
-        nuevo_id = cursor.lastrowid
-    return _solicitud(nuevo_id)
+    espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos.espacio_id,)).fetchone()
+    if espacio is None:
+        raise ErrorSolicitud(404, "espacio_no_encontrado", "No existe el espacio indicado.")
+    if espacio["estado"] != "activo":
+        raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
+    if datos.personas > espacio["aforo"]:
+        raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
+    cursor = con.execute(
+        "INSERT INTO solicitudes (espacio_id, inicio, fin, personas, descripcion, tipo, solicitante_id, "
+        "rol_solicitante, estado, requiere_pago, estado_pago) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?)",
+        (datos.espacio_id, _texto(datos.inicio), _texto(datos.fin), datos.personas, datos.descripcion, tipo,
+         identidad.usuario_id, identidad.rol, int(comercial), "pendiente" if comercial else None),
+    )
+    return cursor.lastrowid
 
 
 def aprobar_solicitud(solicitud_id: int, identidad: Identidad) -> dict:

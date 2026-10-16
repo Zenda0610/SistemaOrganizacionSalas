@@ -127,14 +127,16 @@ def listar_cohortes() -> list[dict]:
 
 
 class MensajeChat(BaseModel):
+    # extra="forbid": el cliente no puede enviar identidad ni rol.
     model_config = ConfigDict(extra="forbid")
 
     mensaje: str = Field(max_length=2000)
+    conversacion_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
 
 
 @app.post("/api/chat")
 def chat(cuerpo: MensajeChat, identidad: Identidad = Depends(identidad_actual)) -> dict:
-    return chat_solicitudes.procesar(identidad, cuerpo.mensaje)
+    return chat_solicitudes.procesar(identidad, cuerpo.mensaje, cuerpo.conversacion_id)
 
 
 # --- Solicitudes y disponibilidad ----------------------------------------------
