@@ -10,6 +10,7 @@ const cargadores = {
   espacios: cargarEspacios,
   cohortes: cargarCohortes,
   calidad: cargarCalidad,
+  chat: async () => {},  // el chat no carga datos al abrirse
 };
 const cargadosPorPestana = new Set();
 
@@ -445,6 +446,42 @@ async function cargarEstadoIA() {
     insignia.textContent = `IA: no disponible. ${error.message}`;
   }
 }
+
+// --- Chat de solicitudes --------------------------------------------------------
+
+const ESTADOS_CHAT_CORRECTOS = new Set(["consulta", "solicitud_creada", "solicitudes"]);
+
+async function enviarChat(evento) {
+  evento.preventDefault();
+  const entrada = document.getElementById("entrada-chat");
+  const respuesta = document.getElementById("respuesta-chat");
+  const datosPanel = document.getElementById("datos-chat");
+  const texto = entrada.value.trim();
+  if (!texto) return;
+  respuesta.className = "resultado estado-cargando";
+  respuesta.textContent = "Consultando…";
+  try {
+    const datos = await pedir("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mensaje: texto }),
+    });
+    respuesta.className = `resultado estado-${ESTADOS_CHAT_CORRECTOS.has(datos.estado) ? "ok" : "vacio"}`;
+    respuesta.textContent = datos.respuesta;
+    if (datos.datos.length) {
+      const columnas = Object.keys(datos.datos[0]).map((clave) => ({ titulo: clave, valor: (f) => String(f[clave]) }));
+      datosPanel.replaceChildren(crearTabla(columnas, datos.datos));
+    } else {
+      datosPanel.replaceChildren();
+    }
+  } catch (error) {
+    respuesta.className = "resultado estado-error";
+    respuesta.textContent = error.message;
+    datosPanel.replaceChildren();
+  }
+}
+
+document.getElementById("form-chat").addEventListener("submit", enviarChat);
 
 // --- Arranque -------------------------------------------------------------------
 

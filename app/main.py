@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,7 @@ from starlette.exceptions import HTTPException as ErrorHTTP
 from app import carga_datos, db, ia
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
-from app import solicitudes
+from app import chat as chat_solicitudes, solicitudes
 from app.permisos import requerir_permiso
 from app.identidad import Identidad
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
@@ -59,6 +60,11 @@ async def manejar_error_general(_request, error: Exception):
 
 @app.exception_handler(ErrorAcceso)
 async def manejar_error_acceso(_request, error: ErrorAcceso):
+    return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
+
+
+@app.exception_handler(chat_solicitudes.ErrorChat)
+async def manejar_error_chat(_request, error: chat_solicitudes.ErrorChat):
     return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
 
 
@@ -118,6 +124,17 @@ def listar_cohortes() -> list[dict]:
         cohorte = Cohorte(**{campo: fila[campo] for campo in CAMPOS_COHORTE})
         resultado.append({**cohorte.model_dump(mode="json"), "dias_restantes": cohorte.dias_restantes()})
     return resultado
+
+
+class MensajeChat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mensaje: str = Field(max_length=2000)
+
+
+@app.post("/api/chat")
+def chat(cuerpo: MensajeChat, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return chat_solicitudes.procesar(identidad, cuerpo.mensaje)
 
 
 # --- Solicitudes y disponibilidad ----------------------------------------------

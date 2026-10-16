@@ -95,6 +95,16 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 - Reubicaciones, chat y flujo comercial completo (pago, tarifas, rechazo de solicitudes).
 - Regla de devolución: la devolución se exige cinco minutos antes del final, pero el aula sigue reservada hasta la hora final. Esta etapa aplica solo la reserva hasta la hora final. La devolución no está implementada.
 
+## Chat de solicitudes
+
+**Estado: provisional, sin verificar la inferencia real.** Requiere un proveedor de IA configurado, y en el desarrollo actual no lo hay.
+
+- `POST /api/chat` con `{"mensaje": "..."}`. La IA interpreta el texto y propone una acción de una lista cerrada: `consultar_disponibilidad`, `crear_solicitud` o `ver_solicitudes`.
+- La identidad y el rol salen del servidor. El texto del mensaje no puede cambiarlos, y los parámetros propuestos se validan con los mismos modelos de la API de solicitudes.
+- Aprobar **no** es una acción del chat. La aprobación sigue siendo solo de la coordinadora, por la API.
+- Si la IA no responde, el chat devuelve 503 `ia_no_disponible` y no ejecuta nada. El detalle técnico va al log, no al cliente.
+- Las pruebas simulan la IA en el punto de llamada. La prueba de inferencia real se omite si el proveedor no está configurado.
+
 ## Instalación
 
 Requisitos: Python 3.11 o superior.

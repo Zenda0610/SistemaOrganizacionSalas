@@ -266,6 +266,29 @@ const casos = [
     const cancelada = { id: "S9", espacio_id: "E01", fecha: "2026-10-20", hora_inicio: "08:00", hora_fin: "10:00", area: "software", tipo: "clase", estado: "cancelada" };
     assert.strictEqual(bloquesEnCelda(pintar("2026-10-20", [cancelada], []), 32).length, 0);
   });
+  // Chat: el texto de error o de éxito viene del servidor y se muestra tal cual.
+  const chatCon = async (respuestaChat) => {
+    const interfaz = cargarInterfaz(respuestaChat);
+    interfaz.contexto.document.getElementById("entrada-chat").value = "reserve el auditorio";
+    await vm.runInContext("enviarChat({ preventDefault() {} })", interfaz.contexto);
+    return interfaz.contexto.document.getElementById("respuesta-chat").textContent;
+  };
+  try {
+    const texto = await chatCon(() => respuestaJson(503, { mensaje: "La IA no está disponible en este momento. No se ejecutó ninguna acción.", codigo: "ia_no_disponible" }));
+    assert.match(texto, /No se ejecutó ninguna acción/);
+    console.log("ok   - chat: IA no disponible se muestra sin ejecutar acciones");
+  } catch (error) {
+    fallos += 1;
+    console.log("FAIL - chat IA no disponible\n     ", error.message.split("\n")[0]);
+  }
+  try {
+    const texto = await chatCon(() => respuestaJson(200, { estado: "solicitud_creada", respuesta: "Solicitud 7 creada en estado pendiente (academica).", datos: [] }));
+    assert.strictEqual(texto, "Solicitud 7 creada en estado pendiente (academica).");
+    console.log("ok   - chat: solicitud creada se muestra con el texto del servidor");
+  } catch (error) {
+    fallos += 1;
+    console.log("FAIL - chat solicitud creada\n     ", error.message.split("\n")[0]);
+  }
   // La sesión muestra la identidad de desarrollo y el aviso de que no es autenticación.
   const sesion = cargarInterfaz(() => respuestaJson(200, {}));
   await vm.runInContext("cargarSesion()", sesion.contexto);

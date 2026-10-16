@@ -18,6 +18,7 @@
     <button class="pestana" data-pestana="espacios" role="tab">Espacios</button>
     <button class="pestana" data-pestana="cohortes" role="tab">Cohortes</button>
     <button class="pestana" data-pestana="calidad" role="tab">Calidad de datos</button>
+    <button class="pestana" data-pestana="chat" role="tab">Chat de solicitudes</button>
   </nav>
 
   <main>
@@ -51,6 +52,16 @@
       <p id="resultado-importacion" class="resultado" role="status"></p>
       <p class="estado" aria-live="polite"></p>
       <div class="contenido"></div>
+    </section>
+    <section id="chat" class="panel">
+      <form id="form-chat" class="controles">
+        <label>Mensaje
+          <input id="entrada-chat" type="text" maxlength="500" required>
+        </label>
+        <button type="submit">Enviar</button>
+      </form>
+      <p id="respuesta-chat" class="resultado" role="status"></p>
+      <div id="datos-chat" class="contenido"></div>
     </section>
   </main>
 
