@@ -8,71 +8,67 @@
 </head>
 <body>
   <header class="encabezado">
-    <h1>Sistema Central de Gestión Operativa de Campuslands</h1>
+    <div><p class="marca">CAMPUSLANDS · GESTIÓN DE ESPACIOS</p><h1>Un espacio para cada actividad</h1></div>
     <span id="estado-ia" class="insignia insignia-pendiente">IA: verificando…</span>
   </header>
   <p id="aviso-sesion" class="aviso" role="status"></p>
-
-  <nav class="pestanas" role="tablist">
-    <button class="pestana activa" data-pestana="grilla" role="tab">Grilla</button>
-    <button class="pestana" data-pestana="espacios" role="tab">Espacios</button>
-    <button class="pestana" data-pestana="cohortes" role="tab">Cohortes</button>
-    <button class="pestana" data-pestana="calidad" role="tab">Calidad de datos</button>
-    <button class="pestana" data-pestana="chat" role="tab">Chat de solicitudes</button>
-    <button class="pestana" data-pestana="solicitudes" role="tab">Solicitudes</button>
+  <nav class="pestanas" role="tablist" aria-label="Secciones">
+    <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0">Calendario</button>
+    <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1">Solicitudes</button>
+    <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1">Aulas</button>
+    <button id="tab-datos" class="pestana" data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
   </nav>
-
   <main>
-    <section id="grilla" class="panel activo">
-      <div class="controles">
-        <label>Fecha
-          <select id="selector-fecha"></select>
-        </label>
-        <div id="leyenda" class="leyenda"></div>
+    <section id="grilla" class="panel activo" role="tabpanel" aria-labelledby="tab-grilla">
+      <div class="espacio-trabajo">
+        <div class="calendario">
+          <div class="titulo-seccion"><div><h2>Calendario de aulas</h2><p>Consulta de ocupación · 24 horas · Hora local del centro</p></div><span class="etiqueta">Solo lectura</span></div>
+          <div class="controles fechas">
+            <button id="dia-anterior" type="button" aria-label="Día anterior">← Anterior</button>
+            <button id="dia-hoy" type="button">Hoy</button>
+            <button id="dia-siguiente" type="button" aria-label="Día siguiente">Siguiente →</button>
+            <label>Fecha <input id="selector-fecha" type="date" required></label>
+          </div>
+          <div id="leyenda" class="leyenda" aria-label="Leyenda del calendario"></div>
+          <p class="estado" role="status" aria-live="polite"></p>
+          <div class="tabla-scroll calendario-scroll" tabindex="0" role="region" aria-label="Ocupación de aulas, desplazable"><table id="tabla-grilla" class="grilla" aria-label="Ocupación por aula y hora"></table></div>
+          <h3 class="subtitulo">Reservas aprobadas del día</h3>
+          <div id="reservas-aprobadas" class="tabla-scroll"></div>
+        </div>
+        <aside id="chat" class="asistente" aria-labelledby="titulo-chat">
+          <div class="titulo-seccion"><div><p class="marca">ASISTENTE DE AULAS</p><h2 id="titulo-chat">Planeemos tu solicitud</h2></div></div>
+          <p class="ayuda">Indica fecha, horario, asistentes y actividad. Revisa la propuesta antes de confirmarla.</p>
+          <div id="historial-chat" class="historial-chat" role="log" aria-label="Conversación" aria-live="polite" aria-relevant="additions"></div>
+          <p id="respuesta-chat" class="resultado" role="status"></p>
+          <div id="datos-chat"></div>
+          <button id="consultar-resultado-chat" type="button" hidden>Consultar solicitudes antes de repetir</button>
+          <form id="form-chat">
+            <label for="entrada-chat">Tu mensaje</label>
+            <textarea id="entrada-chat" rows="3" maxlength="500" required placeholder="Ej.: Una clase de SER para 8 personas, mañana de 8:00 a 10:00"></textarea>
+            <div class="pie-chat"><span class="ayuda">La confirmación crea una solicitud pendiente.</span><button id="enviar-chat" type="submit">Enviar mensaje</button></div>
+          </form>
+        </aside>
       </div>
-      <p class="estado" aria-live="polite"></p>
-      <div class="tabla-scroll"><table id="tabla-grilla" class="grilla"></table></div>
-      <h2 class="subtitulo">Reservas aprobadas del día</h2>
-      <div id="reservas-aprobadas"></div>
     </section>
-
-    <section id="espacios" class="panel">
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
-    </section>
-
-    <section id="cohortes" class="panel">
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
-    </section>
-
-    <section id="calidad" class="panel">
-      <div class="controles">
-        <button id="boton-recargar" type="button">Recargar datos</button>
-      </div>
-      <p id="resultado-importacion" class="resultado" role="status"></p>
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
-    </section>
-    <section id="chat" class="panel">
-      <form id="form-chat" class="controles">
-        <label>Mensaje
-          <input id="entrada-chat" type="text" maxlength="500" required>
-        </label>
-        <button type="submit">Enviar</button>
-      </form>
-      <p id="respuesta-chat" class="resultado" role="status"></p>
-      <div id="datos-chat" class="contenido"></div>
-    </section>
-    <section id="solicitudes" class="panel">
-      <h2 class="subtitulo">Solicitudes registradas</h2>
-      <p>Solo la coordinadora puede aprobar solicitudes pendientes. La identidad de desarrollo se configura en el servidor.</p>
-      <button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button>
+    <section id="solicitudes" class="panel" role="tabpanel" aria-labelledby="tab-solicitudes" hidden>
+      <div class="titulo-seccion"><div><h2>Solicitudes registradas</h2><p>Seguimiento y aprobación</p></div><button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button></div>
+      <p class="ayuda">Solo la coordinadora puede aprobar solicitudes pendientes. La identidad de desarrollo se configura en el servidor. Una solicitud comercial no acredita pago.</p>
       <p id="resultado-solicitudes" class="resultado" role="status"></p>
       <div id="solicitudes-registradas" class="tabla-scroll"></div>
     </section>
+    <section id="espacios" class="panel" role="tabpanel" aria-labelledby="tab-espacios" hidden>
+      <h2>Catálogo de aulas</h2><p class="estado" aria-live="polite"></p><div class="contenido"></div>
+    </section>
+    <section id="datos" class="panel" role="tabpanel" aria-labelledby="tab-datos" hidden>
+      <h2>Datos del centro</h2><p class="estado" aria-live="polite"></p>
+      <section id="cohortes" class="bloque-datos" aria-labelledby="titulo-cohortes"><h3 id="titulo-cohortes">Cohortes</h3><p class="estado" aria-live="polite"></p><div class="contenido tabla-scroll"></div></section>
+      <section id="calidad" class="bloque-datos" aria-labelledby="titulo-calidad">
+        <div class="titulo-seccion"><h3 id="titulo-calidad">Calidad de datos</h3><button id="boton-recargar" type="button">Recargar datos</button></div>
+        <p id="resultado-importacion" class="resultado" role="status"></p><p class="estado" aria-live="polite"></p><div class="contenido tabla-scroll"></div>
+      </section>
+    </section>
   </main>
-
+  <footer>Entorno de desarrollo · Datos ficticios · Las reservas requieren aprobación de la coordinadora.</footer>
   <script src="/app.js"></script>
 </body>
 </html>

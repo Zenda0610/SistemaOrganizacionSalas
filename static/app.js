@@ -12,8 +12,15 @@ const cargadores = {
   calidad: cargarCalidad,
   chat: async () => {},
   solicitudes: cargarSolicitudes,
+  datos: async () => {
+    await Promise.all([
+      cargarCohortes().catch((e) => mostrarEstado("cohortes", "error", e.message)),
+      cargarCalidad().catch((e) => mostrarEstado("calidad", "error", e.message)),
+    ]);
+  },
 };
 const cargadosPorPestana = new Set();
+let nombresAulas = {};
 
 // --- Utilidades -----------------------------------------------------------------
 
@@ -103,8 +110,16 @@ function horaDesdeMinutos(minutos) {
 // --- Pestañas -------------------------------------------------------------------
 
 function activarPestana(nombre) {
-  document.querySelectorAll(".pestana").forEach((b) => b.classList.toggle("activa", b.dataset.pestana === nombre));
-  document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("activo", p.id === nombre));
+  document.querySelectorAll(".pestana").forEach((b) => {
+    const activa = b.dataset.pestana === nombre;
+    b.classList.toggle("activa", activa);
+    b.setAttribute("aria-selected", String(activa));
+    b.tabIndex = activa ? 0 : -1;
+  });
+  document.querySelectorAll(".panel").forEach((p) => {
+    p.classList.toggle("activo", p.id === nombre);
+    p.hidden = p.id !== nombre;
+  });
   if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes") {
     cargadores[nombre]().catch((error) => mostrarEstado(nombre, "error", error.message));
     cargadosPorPestana.add(nombre);
@@ -113,41 +128,50 @@ function activarPestana(nombre) {
 
 // --- Grilla semanal (por día) ---------------------------------------------------
 
-async function cargarGrilla(fechaPreferida) {
-  mostrarEstado("grilla", "cargando", "Cargando grilla…");
-  const selector = document.getElementById("selector-fecha");
-  const seleccionAnterior = fechaPreferida || selector.value;
-  {
-    const [todas, reservas] = await Promise.all([pedir("/sesiones"), pedir("/reservas")]);
-    const fechas = [...new Set([...todas.map((s) => s.fecha), ...reservas.flatMap(fechasDeReserva)])].sort();
-    if (!fechas.length) {
-      mostrarEstado("grilla", "vacio", "No hay sesiones cargadas. Recargue los datos desde la pestaña Calidad de datos.");
-      document.getElementById("tabla-grilla").replaceChildren();
-      selector.replaceChildren();
-      document.getElementById("reservas-aprobadas").replaceChildren();
-      return;
-    }
-    selector.replaceChildren();
-    fechas.forEach((f) => selector.appendChild(new Option(f, f)));
-    if (fechas.includes(seleccionAnterior)) selector.value = seleccionAnterior;
-    selector.onchange = () => cargarDia(selector.value);
-  }
-  await cargarDia(selector.value);
-  pintarLeyenda();
+function fechaLocalHoy() {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
 }
 
+async function cargarGrilla(fechaPreferida) {
+  const selector = document.getElementById("selector-fecha");
+  return cargarDia(fechaPreferida || selector.value || fechaLocalHoy());
+}
+
+let numeroCargaDia = 0;
+
 async function cargarDia(fecha) {
-  const [espacios, sesiones, reservas] = await Promise.all([
-    pedir("/espacios"), pedir(`/sesiones?fecha=${fecha}`), pedir(`/reservas?fecha=${fecha}`),
-  ]);
-  if (!espacios.length) {
-    mostrarEstado("grilla", "vacio", "No hay espacios cargados.");
-    return;
+  const carga = ++numeroCargaDia;
+  const selector = document.getElementById("selector-fecha");
+  selector.value = fecha;
+  document.getElementById("tabla-grilla").replaceChildren();
+  document.getElementById("reservas-aprobadas").replaceChildren();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    mostrarEstado("grilla", "vacio", "Elige una fecha válida para consultar.");
+    return false;
   }
-  construirGrilla(espacios, sesiones, reservas, fecha);
-  pintarReservas(espacios, reservas);
-  mostrarEstado("grilla", sesiones.length || reservas.length ? "ok" : "vacio",
-    sesiones.length || reservas.length ? "" : `No hay sesiones ni reservas programadas para ${fecha}.`);
+  mostrarEstado("grilla", "cargando", `Consultando ${fecha}…`);
+  try {
+    const [espacios, sesiones, reservas] = await Promise.all([
+      pedir("/espacios"), pedir(`/sesiones?fecha=${fecha}`), pedir(`/reservas?fecha=${fecha}`),
+    ]);
+    if (carga !== numeroCargaDia || selector.value !== fecha) return false;
+    if (!espacios.length) {
+      mostrarEstado("grilla", "vacio", "Datos sin cargar: importa el catálogo desde Datos → Calidad de datos.");
+      return false;
+    }
+    nombresAulas = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
+    construirGrilla(espacios, sesiones, reservas, fecha);
+    pintarReservas(espacios, reservas);
+    pintarLeyenda();
+    const ocupado = sesiones.some((s) => s.estado !== "cancelada") || reservas.length;
+    mostrarEstado("grilla", "ok", ocupado ? `Ocupación del ${fecha}.` : `Día libre · ${fecha}. No hay ocupaciones registradas.`);
+    return true;
+  } catch (error) {
+    if (carga !== numeroCargaDia || selector.value !== fecha) return false;
+    mostrarEstado("grilla", "error", `No se pudo consultar ${fecha}. ${error.message}`);
+    return false;
+  }
 }
 
 const MINUTOS_DIA = 24 * 60;
@@ -451,6 +475,7 @@ async function cargarSolicitudes() {
     const [filas, sesion, espacios] = await Promise.all([pedir("/solicitudes"), pedir("/sesion"), pedir("/espacios")]);
     if (carga !== numeroCargaSolicitudes) return;
     const nombres = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
+    nombresAulas = nombres;
     const tabla = crearTabla([
       { titulo: "ID", valor: (f) => f.id },
       { titulo: "Aula", valor: (f) => nombres[f.espacio_id] || f.espacio_id },
@@ -495,6 +520,7 @@ async function aprobarSolicitud(id, boton) {
   if (boton.disabled || aprobacionesEnCurso.has(id)) return;
   aprobacionesEnCurso.add(id);
   boton.disabled = true;
+  const fechaAlAprobar = document.getElementById("selector-fecha").value;
   const resultado = document.getElementById("resultado-solicitudes");
   let aprobada;
   try {
@@ -517,8 +543,10 @@ async function aprobarSolicitud(id, boton) {
   }
   aprobacionesEnCurso.delete(id);
   try {
-    const [listaActualizada] = await Promise.all([cargarSolicitudes(), cargarGrilla(aprobada.inicio.slice(0, 10))]);
-    if (!listaActualizada) throw new Error("Consulte de nuevo las solicitudes registradas.");
+    const fechaActual = document.getElementById("selector-fecha").value;
+    const fechaRefresco = fechaActual === fechaAlAprobar ? aprobada.inicio.slice(0, 10) : fechaActual;
+    const [listaActualizada, calendarioActualizado] = await Promise.all([cargarSolicitudes(), cargarGrilla(fechaRefresco)]);
+    if (!listaActualizada || !calendarioActualizado) throw new Error("Consulte de nuevo las solicitudes y el calendario.");
     resultado.className = "resultado estado-ok";
     resultado.textContent = `Solicitud ${id} aprobada. Devolución: ${aprobada.hora_devolucion}.`;
   } catch (error) {
@@ -553,13 +581,100 @@ const CONVERSACION_ID = typeof crypto !== "undefined" && crypto.randomUUID
   ? crypto.randomUUID()
   : `c${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
+let chatEnviando = false;
+let chatRequiereConsulta = false;
+
+function agregarMensaje(autor, texto) {
+  const historial = document.getElementById("historial-chat");
+  const mensaje = crearElemento("article", `mensaje mensaje-${autor === "Tú" ? "usuario" : "asistente"}`);
+  mensaje.appendChild(crearElemento("strong", "autor-mensaje", autor));
+  mensaje.appendChild(crearElemento("p", "", texto));
+  historial.appendChild(mensaje);
+  historial.scrollTop = historial.scrollHeight;
+  return mensaje;
+}
+
+function tarjetaSolicitud(fila, estadoChat) {
+  const tarjeta = crearElemento("article", "tarjeta-propuesta");
+  const estado = fila.estado || (estadoChat === "propuesta" ? "propuesta" : "pendiente");
+  const titulo = estado === "propuesta" ? "Propuesta · Requiere tu confirmación"
+    : estado === "aprobada" ? "Reserva aprobada" : "Solicitud pendiente de aprobación";
+  tarjeta.appendChild(crearElemento("h3", "", titulo));
+  const inicio = fila.inicio || "";
+  const fin = fila.fin || "";
+  const horaInicio = inicio.includes(" ") ? inicio.slice(11) : inicio;
+  const horaFin = fin.includes(" ") && fin.slice(0, 10) === inicio.slice(0, 10) ? fin.slice(11) : fin;
+  const campos = [
+    ["Aula", fila.nombre || nombresAulas[fila.espacio_id] || fila.espacio_id],
+    ["Fecha", fila.fecha || (fila.inicio || "").slice(0, 10)],
+    ["Horario", `${horaInicio} → ${horaFin}`],
+    ["Asistentes", fila.personas], ["Actividad", fila.descripcion],
+  ];
+  const lista = crearElemento("dl");
+  campos.forEach(([nombre, valor]) => {
+    if (valor === undefined || valor === null || valor === "") return;
+    lista.appendChild(crearElemento("dt", "", nombre));
+    lista.appendChild(crearElemento("dd", "", String(valor)));
+  });
+  tarjeta.appendChild(lista);
+  if (fila.tipo === "comercial") tarjeta.appendChild(crearElemento("p", "ayuda", "Comercial · Pago pendiente, no verificado por el sistema."));
+  return tarjeta;
+}
+
+function pintarDatosChat(datos, estado, destino) {
+  if (estado === "propuesta" || estado === "solicitud_creada" || estado === "solicitudes") {
+    datos.forEach((fila) => destino.appendChild(tarjetaSolicitud(fila, estado)));
+  } else if (estado === "consulta") {
+    datos.forEach((fila) => destino.appendChild(crearElemento("p", "aula-disponible", `${fila.nombre || fila.id} · Aforo ${fila.aforo}`)));
+  }
+  const historial = document.getElementById("historial-chat");
+  historial.scrollTop = historial.scrollHeight;
+}
+
+function actualizarEstadoEnvio() {
+  const boton = document.getElementById("enviar-chat");
+  boton.disabled = chatEnviando || chatRequiereConsulta;
+  boton.textContent = chatEnviando ? "Enviando…" : "Enviar mensaje";
+  document.getElementById("entrada-chat").disabled = chatEnviando;
+  document.getElementById("form-chat").setAttribute("aria-busy", String(chatEnviando));
+  document.getElementById("consultar-resultado-chat").hidden = !chatRequiereConsulta;
+}
+
+async function consultarResultadoChat() {
+  const respuesta = document.getElementById("respuesta-chat");
+  const consultar = document.getElementById("consultar-resultado-chat");
+  consultar.disabled = true;
+  try {
+    const [filas, espacios] = await Promise.all([pedir("/solicitudes"), pedir("/espacios")]);
+    if (!Array.isArray(filas) || !Array.isArray(espacios)) throw new Error("Respuesta no reconocida.");
+    const nombres = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
+    const mensaje = agregarMensaje("Asistente", "Estado consultado. Revisa las solicitudes registradas antes de volver a confirmar. "
+      + "El listado no permite atribuir una solicitud a este mensaje; no se reenvió ninguna confirmación.");
+    pintarDatosChat(filas.map((f) => ({ ...f, nombre: nombres[f.espacio_id] || f.espacio_id })), "solicitudes", mensaje);
+    if (!filas.length) mensaje.appendChild(crearElemento("p", "", "No hay solicitudes registradas para la identidad actual."));
+    respuesta.textContent = "Resultado del mensaje anterior desconocido. Se consultó el estado; revisa el listado antes de repetir en esta conversación.";
+    chatRequiereConsulta = false;
+    await cargarSolicitudes();
+  } catch (error) {
+    respuesta.textContent = `Resultado desconocido. No se pudo consultar el estado: ${error.message} Consulta antes de repetir.`;
+  } finally {
+    consultar.disabled = false;
+    actualizarEstadoEnvio();
+  }
+}
+
 async function enviarChat(evento) {
   evento.preventDefault();
+  if (chatEnviando || chatRequiereConsulta) return;
   const entrada = document.getElementById("entrada-chat");
   const respuesta = document.getElementById("respuesta-chat");
   const datosPanel = document.getElementById("datos-chat");
   const texto = entrada.value.trim();
   if (!texto) return;
+  chatEnviando = true;
+  actualizarEstadoEnvio();
+  agregarMensaje("Tú", texto);
+  datosPanel.replaceChildren();
   respuesta.className = "resultado estado-cargando";
   respuesta.textContent = "Consultando…";
   try {
@@ -568,20 +683,28 @@ async function enviarChat(evento) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mensaje: texto, conversacion_id: CONVERSACION_ID }),
     });
+    if (!datos || typeof datos.estado !== "string" || typeof datos.respuesta !== "string" || !Array.isArray(datos.datos)) {
+      throw errorResultadoDesconocido("La respuesta del chat no permite confirmar el resultado.");
+    }
     respuesta.className = `resultado estado-${ESTADOS_CHAT_CORRECTOS.has(datos.estado) ? "ok" : "vacio"}`;
     respuesta.textContent = datos.respuesta;
-    if (datos.datos.length) {
-      const columnas = Object.keys(datos.datos[0]).map((clave) => ({ titulo: clave, valor: (f) => String(f[clave]) }));
-      datosPanel.replaceChildren(crearTabla(columnas, datos.datos));
-    } else {
-      datosPanel.replaceChildren();
-    }
+    const mensaje = agregarMensaje("Asistente", datos.respuesta);
+    if (datos.estado === "solicitud_creada") mensaje.appendChild(crearElemento("p", "etiqueta", "Solicitud pendiente de aprobación"));
+    pintarDatosChat(datos.datos, datos.estado, mensaje);
+    entrada.value = "";
   } catch (error) {
     respuesta.className = "resultado estado-error";
     respuesta.textContent = error.message;
-    datosPanel.replaceChildren();
+    agregarMensaje("Asistente", error.message);
+    const sinAccion = ["ia_no_disponible", "mensaje_no_valido", "sin_identidad", "sin_permiso"].includes(error.codigo);
+    if (!sinAccion) {
+      chatRequiereConsulta = true;
+      await consultarResultadoChat();
+    }
   } finally {
     await cargarSolicitudes();
+    chatEnviando = false;
+    actualizarEstadoEnvio();
   }
 }
 
@@ -591,7 +714,24 @@ document.getElementById("form-chat").addEventListener("submit", enviarChat);
 
 document.querySelectorAll(".pestana").forEach((boton) => {
   boton.addEventListener("click", () => activarPestana(boton.dataset.pestana));
+  boton.addEventListener("keydown", (evento) => {
+    const teclas = ["ArrowRight", "ArrowLeft", "Home", "End"];
+    if (!teclas.includes(evento.key)) return;
+    evento.preventDefault();
+    const botones = [...document.querySelectorAll(".pestana")];
+    const actual = botones.indexOf(boton);
+    const indice = evento.key === "Home" ? 0 : evento.key === "End" ? botones.length - 1
+      : (actual + (evento.key === "ArrowRight" ? 1 : -1) + botones.length) % botones.length;
+    botones[indice].focus();
+    activarPestana(botones[indice].dataset.pestana);
+  });
 });
+
+document.getElementById("selector-fecha").addEventListener("change", (evento) => cargarDia(evento.target.value));
+document.getElementById("dia-anterior").addEventListener("click", () => cargarGrilla(diaVecino(document.getElementById("selector-fecha").value || fechaLocalHoy(), -1)));
+document.getElementById("dia-siguiente").addEventListener("click", () => cargarGrilla(diaVecino(document.getElementById("selector-fecha").value || fechaLocalHoy(), 1)));
+document.getElementById("dia-hoy").addEventListener("click", () => cargarGrilla(fechaLocalHoy()));
+document.getElementById("consultar-resultado-chat").addEventListener("click", consultarResultadoChat);
 document.getElementById("boton-recargar").addEventListener("click", recargarDatos);
 document.getElementById("boton-actualizar-solicitudes").addEventListener("click", cargarSolicitudes);
 activarPestana("grilla");

@@ -10,7 +10,10 @@ const codigoInterfaz = fs.readFileSync(path.join(__dirname, "..", "static", "app
 
 function crearElemento(etiqueta = "div") {
   return {
-    etiqueta, children: [], listeners: {}, style: {},
+    etiqueta, children: [], listeners: {}, style: {}, attributes: {},
+    setAttribute(nombre, valor) { this.attributes[nombre] = valor; },
+    getAttribute(nombre) { return this.attributes[nombre]; },
+    focus() { this.enfocado = true; },
     className: "", textContent: "", disabled: false, options: [], value: "",
     classList: { toggle() {} },
     addEventListener(nombre, fn) { this.listeners[nombre] = fn; },
@@ -52,7 +55,7 @@ function cargarInterfaz(respuestaImportacion) {
   const documento = {
     querySelectorAll: () => [],
     querySelector: (selector) => (elementos[selector] = elementos[selector] || crearElemento()),
-    getElementById: (id) => (elementos[id] = elementos[id] || crearElemento(id === "selector-fecha" ? "select" : "div")),
+    getElementById: (id) => (elementos[id] = elementos[id] || crearElemento(id === "selector-fecha" ? "input" : "div")),
     createElement: (etiqueta) => crearElemento(etiqueta),
     createDocumentFragment: () => crearElemento(),
   };
@@ -337,6 +340,7 @@ const casos = [
   const botonesNodo = (n) => (n.etiqueta === "button" ? [n] : (n.children || []).flatMap(botonesNodo));
   const escenario = async (rol = "coordinadora", opciones = {}) => {
     const vista = cargarInterfaz(() => respuestaJson(200, {}));
+    vista.contexto.document.getElementById("entrada-chat");
     await new Promise(setImmediate);  // terminar las cargas de arranque antes de fijar el escenario
     const llamadas = [];
     let aprobada = false;
@@ -366,7 +370,7 @@ const casos = [
   await pruebaAsync("solicitudes: coordinadora aprueba desde el botón y refresca lista, grilla y fecha nueva", async () => {
     const vista = await escenario();
     const selector = vista.contexto.document.getElementById("selector-fecha");
-    selector.appendChild(new vista.contexto.Option("2026-10-01", "2026-10-01"));
+    selector.value = "2026-10-01";
     await vm.runInContext("cargarSolicitudes()", vista.contexto);
     const boton = botonesNodo(vista.elementos["solicitudes-registradas"])[0];
     assert.strictEqual(boton.textContent, "Aprobar");
@@ -378,7 +382,7 @@ const casos = [
     assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /aprobada/);
     assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
     assert.strictEqual(selector.value, "2026-11-02");
-    assert.ok(selector.options.some((o) => o.value === "2026-11-02"));
+    assert.ok(vista.llamadas.some(([url]) => url === "/api/reservas?fecha=2026-11-02"));
     assert.strictEqual(vista.elementos["#grilla .estado"].className, "estado estado-ok");
     assert.match(textoNodo(vista.elementos["reservas-aprobadas"]), /Devolución/);
     assert.match(textoNodo(vista.elementos["reservas-aprobadas"]), /2026-11-02 07:55/);
@@ -448,6 +452,175 @@ const casos = [
     await vm.runInContext("enviarChat({ preventDefault() {} })", vista.contexto);
     assert.strictEqual(vista.llamadas.filter(([url]) => url === "/api/solicitudes").length, 3);
     assert.strictEqual(vista.elementos["respuesta-chat"].textContent, "Solicitud creada");
+  });
+  await pruebaAsync("calendario: una fecha libre conserva catálogo y las 96 franjas", async () => {
+    const vista = await escenario();
+    await vm.runInContext('cargarGrilla("2027-01-08")', vista.contexto);
+    assert.strictEqual(vista.elementos["selector-fecha"].value, "2027-01-08");
+    assert.match(vista.elementos["#grilla .estado"].textContent, /Día libre/);
+    assert.match(textoNodo(vista.elementos["tabla-grilla"]), /Sala Blanca/);
+    assert.strictEqual(vista.elementos["tabla-grilla"].querySelector("tbody").children.length, 96);
+  });
+  await pruebaAsync("calendario: distingue catálogo sin cargar de fallo de conexión", async () => {
+    const vista = await escenario();
+    vista.contexto.fetch = async () => respuestaJson(200, []);
+    await vm.runInContext('cargarDia("2027-01-08")', vista.contexto);
+    assert.match(vista.elementos["#grilla .estado"].textContent, /Datos sin cargar/);
+    assert.strictEqual(vista.elementos["tabla-grilla"].children.length, 0);
+    vista.contexto.fetch = async () => { throw new TypeError("sin conexión"); };
+    await vm.runInContext('cargarDia("2027-01-08")', vista.contexto);
+    assert.match(vista.elementos["#grilla .estado"].textContent, /No se pudo consultar/);
+    assert.strictEqual(vista.elementos["#grilla .estado"].className, "estado estado-error");
+    assert.doesNotMatch(vista.elementos["#grilla .estado"].textContent, /Día libre/);
+  });
+  for (const falla of [false, true]) {
+    await pruebaAsync(`calendario: respuesta ${falla ? "fallida" : "correcta"} atrasada no cambia la fecha nueva`, async () => {
+      const vista = await escenario();
+      const fetchActual = vista.contexto.fetch;
+      let terminar;
+      vista.contexto.fetch = (url, opciones) => url === "/api/sesiones?fecha=2027-01-08"
+        ? new Promise((resolve, reject) => { terminar = () => falla ? reject(new Error("error antiguo")) : resolve(respuestaJson(200, [])); })
+        : fetchActual(url, opciones);
+      const antigua = vm.runInContext('cargarDia("2027-01-08")', vista.contexto);
+      await vm.runInContext('cargarDia("2027-01-09")', vista.contexto);
+      const textoActual = vista.elementos["#grilla .estado"].textContent;
+      terminar();
+      await antigua;
+      assert.strictEqual(vista.elementos["selector-fecha"].value, "2027-01-09");
+      assert.strictEqual(vista.elementos["#grilla .estado"].textContent, textoActual);
+      assert.match(textoActual, /2027-01-09/);
+    });
+  }
+  await pruebaAsync("calendario: Anterior, Hoy y Siguiente recorren también días libres", async () => {
+    const vista = await escenario();
+    await vm.runInContext('cargarDia("2028-03-01")', vista.contexto);
+    await vista.elementos["dia-anterior"].listeners.click();
+    assert.strictEqual(vista.elementos["selector-fecha"].value, "2028-02-29");
+    await vista.elementos["dia-siguiente"].listeners.click();
+    assert.strictEqual(vista.elementos["selector-fecha"].value, "2028-03-01");
+    await vista.elementos["dia-hoy"].listeners.click();
+    assert.strictEqual(vista.elementos["selector-fecha"].value, vm.runInContext("fechaLocalHoy()", vista.contexto));
+  });
+  await pruebaAsync("calendario: aprobación tardía conserva la fecha elegida mientras se procesaba", async () => {
+    const vista = await escenario();
+    const devolver = vista.contexto.fetch;
+    let terminar;
+    vista.contexto.fetch = (url, opciones) => url.endsWith("/aprobar")
+      ? new Promise((resolve) => { terminar = () => resolve(respuestaJson(200, { ...vista.solicitud, estado: "aprobada" })); })
+      : devolver(url, opciones);
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    const operacion = botonesNodo(vista.elementos["solicitudes-registradas"])[0].listeners.click();
+    await vm.runInContext('cargarDia("2027-01-15")', vista.contexto);
+    terminar();
+    await operacion;
+    assert.strictEqual(vista.elementos["selector-fecha"].value, "2027-01-15");
+    assert.match(vista.elementos["#grilla .estado"].textContent, /2027-01-15/);
+  });
+  await pruebaAsync("chat: historial y tarjeta de propuesta legible, sin tabla de claves técnicas", async () => {
+    const vista = await escenario("profesor");
+    const devolver = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones) => url === "/api/chat" ? respuestaJson(200, {
+      estado: "propuesta", respuesta: "¿Confirma la solicitud?", datos: [{ nombre: "Sala Blanca", fecha: "2027-01-08", inicio: "08:00", fin: "10:00", personas: 8, descripcion: "Clase SER" }],
+    }) : devolver(url, opciones);
+    vista.elementos["entrada-chat"].value = "Una clase de SER\npara 8 personas";
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    const historial = vista.elementos["historial-chat"];
+    assert.match(textoNodo(historial), /Una clase de SER\npara 8 personas/);
+    assert.match(textoNodo(historial), /Requiere tu confirmación/);
+    assert.match(textoNodo(historial), /Sala Blanca/);
+    assert.match(textoNodo(historial), /Asistentes 8/);
+    assert.strictEqual(historial.querySelector("table"), null);
+    assert.strictEqual(vista.elementos["entrada-chat"].value, "");
+  });
+  await pruebaAsync("chat: bloquea doble envío en curso y conserva el mensaje si falla IA", async () => {
+    const vista = await escenario("profesor");
+    let terminar;
+    let envios = 0;
+    const devolver = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones) => {
+      if (url !== "/api/chat") return devolver(url, opciones);
+      envios += 1;
+      return new Promise((resolve) => { terminar = () => resolve(respuestaJson(503, { codigo: "ia_no_disponible", mensaje: "IA no disponible" })); });
+    };
+    vista.elementos["entrada-chat"].value = "Mi mensaje sin perder";
+    const primero = vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    assert.strictEqual(envios, 1);
+    assert.strictEqual(vista.elementos["enviar-chat"].disabled, true);
+    assert.strictEqual(vista.elementos["entrada-chat"].disabled, true);
+    terminar();
+    await primero;
+    assert.strictEqual(vista.elementos["entrada-chat"].value, "Mi mensaje sin perder");
+    assert.strictEqual(vista.elementos["enviar-chat"].disabled, false);
+  });
+  await pruebaAsync("chat: solicitud creada se muestra pendiente y nunca como reserva aprobada", async () => {
+    const vista = await escenario("profesor");
+    const devolver = vista.contexto.fetch;
+    vista.contexto.fetch = (url, opciones) => url === "/api/chat" ? respuestaJson(200, {
+      estado: "solicitud_creada", respuesta: "Solicitud 7 creada pendiente", datos: [vista.solicitud],
+    }) : devolver(url, opciones);
+    vista.elementos["entrada-chat"].value = "sí";
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    assert.match(textoNodo(vista.elementos["historial-chat"]), /Solicitud pendiente de aprobación/);
+    assert.doesNotMatch(textoNodo(vista.elementos["historial-chat"]), /Reserva aprobada/);
+  });
+  await pruebaAsync("chat: respuesta perdida consulta el estado sin reenviar la confirmación", async () => {
+    const vista = await escenario("profesor");
+    const devolver = vista.contexto.fetch;
+    const orden = [];
+    vista.contexto.fetch = (url, opciones) => {
+      orden.push(url);
+      if (url === "/api/chat") throw new TypeError("se perdió respuesta");
+      return devolver(url, opciones);
+    };
+    vista.elementos["entrada-chat"].value = "sí";
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    assert.strictEqual(orden.filter((url) => url === "/api/chat").length, 1);
+    assert.ok(orden.indexOf("/api/solicitudes") > orden.indexOf("/api/chat"));
+    assert.match(vista.elementos["respuesta-chat"].textContent, /desconocido.*Se consultó/);
+    assert.strictEqual(vista.elementos["entrada-chat"].value, "sí");
+    assert.strictEqual(vista.elementos["enviar-chat"].disabled, false);
+  });
+  await pruebaAsync("chat: consulta fallida mantiene bloqueo hasta recuperar el estado", async () => {
+    const vista = await escenario("profesor");
+    const devolver = vista.contexto.fetch;
+    let envios = 0;
+    vista.contexto.fetch = (url) => {
+      if (url === "/api/chat") envios += 1;
+      throw new TypeError("sin conexión");
+    };
+    vista.elementos["entrada-chat"].value = "sí";
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    assert.strictEqual(vista.elementos["enviar-chat"].disabled, true);
+    assert.strictEqual(vista.elementos["consultar-resultado-chat"].hidden, false);
+    await vm.runInContext("enviarChat({preventDefault(){}})", vista.contexto);
+    assert.strictEqual(envios, 1);
+    vista.contexto.fetch = devolver;
+    await vista.elementos["consultar-resultado-chat"].listeners.click();
+    assert.strictEqual(vista.elementos["enviar-chat"].disabled, false);
+    assert.strictEqual(vista.elementos["consultar-resultado-chat"].hidden, true);
+  });
+  await pruebaAsync("pestañas: flechas cambian selección, foco y panel accesible", async () => {
+    const vista = await escenario();
+    const botones = ["grilla", "solicitudes", "espacios", "datos"].map((nombre) => {
+      const boton = crearElemento("button");
+      boton.dataset = { pestana: nombre };
+      return boton;
+    });
+    const paneles = botones.map((b) => Object.assign(crearElemento("section"), { id: b.dataset.pestana }));
+    const documento = vista.contexto.document;
+    documento.querySelectorAll = (selector) => selector === ".pestana" ? botones : selector === ".panel" ? paneles : [];
+    // Volver a registrar la inicialización con los controles reales de este escenario.
+    vm.runInContext(codigoInterfaz.slice(codigoInterfaz.indexOf('// --- Arranque')), vista.contexto);
+    botones[0].listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+    assert.strictEqual(botones[1].enfocado, true);
+    assert.strictEqual(botones[1].getAttribute("aria-selected"), "true");
+    assert.strictEqual(botones[0].tabIndex, -1);
+    assert.strictEqual(paneles[1].hidden, false);
+    assert.strictEqual(paneles[0].hidden, true);
+    botones[1].listeners.keydown({ key: "Home", preventDefault() {} });
+    assert.strictEqual(botones[0].getAttribute("aria-selected"), "true");
+    await new Promise(setImmediate);
   });
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);
