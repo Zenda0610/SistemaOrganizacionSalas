@@ -21,8 +21,9 @@ CAMPOS_COHORTE = ("codigo", "espacio_id", "jornada", "ruta", "cantidad_campers",
 
 @asynccontextmanager
 async def ciclo_de_vida(_app: FastAPI):
+    # El arranque solo crea las tablas que falten. La importación de CSV es explícita:
+    # POST /api/datos/recargar o `python -m app.carga_datos`.
     db.inicializar_base()
-    carga_datos.cargar_datos()
     yield
 
 
