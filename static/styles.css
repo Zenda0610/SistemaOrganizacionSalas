@@ -377,3 +377,14 @@ table.grilla.modo-seleccion td.celda.no-seleccionable { cursor: not-allowed; bac
 table.grilla td.celda.seleccionada { background: rgba(108, 99, 255, 0.45); box-shadow: inset 2px 0 0 var(--acento), inset -2px 0 0 var(--acento); touch-action: none; }
 table.grilla td.celda:focus-visible { outline: 2px solid var(--acento-suave); outline-offset: -2px; }
 
+/* --- Cambios de solicitudes ------------------------------------------------------ */
+.editor-solicitud { margin-top: var(--e4); }
+.editor-solicitud .formulario-fila { background: var(--superficie); }
+.lista-cambios { display: grid; gap: var(--e3); }
+.tarjeta-cambio { margin-top: 0; }
+.tarjeta-cambio .veredicto-ok { color: var(--ok); font-weight: 600; }
+.tarjeta-cambio .veredicto-no { color: var(--error); font-weight: 600; }
+.tarjeta-cambio .analisis-ia { color: var(--texto); white-space: pre-wrap; }
+.tarjeta-cambio .pie-chat input { flex: 1 1 200px; background: var(--superficie); }
+#solicitudes-registradas td button { margin-right: var(--e1); }
+

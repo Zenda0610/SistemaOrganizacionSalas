@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
-from app import carga_datos, coordinacion, db, ia, reubicaciones, operaciones, tarifas
+from app import cambios, carga_datos, coordinacion, db, ia, reubicaciones, operaciones, tarifas
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
@@ -193,6 +193,31 @@ def crear_solicitud(datos: NuevaSolicitud, identidad: Identidad = Depends(identi
 @app.post("/api/solicitudes/{solicitud_id}/aprobar", dependencies=[requerir_permiso("autorizar_solicitud")])
 def aprobar_solicitud(solicitud_id: int, identidad: Identidad = Depends(identidad_actual)) -> dict:
     return solicitudes.aprobar_solicitud(solicitud_id, identidad)
+
+
+@app.post("/api/solicitudes/{solicitud_id}/cancelar")
+def cancelar_solicitud(solicitud_id: int, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return cambios.cancelar(solicitud_id, identidad)
+
+
+@app.post("/api/solicitudes/{solicitud_id}/cambios")
+def cambiar_solicitud(solicitud_id: int, datos: cambios.Cambio, identidad: Identidad = Depends(identidad_actual)) -> dict:
+    return cambios.pedir_cambio(solicitud_id, datos, identidad)
+
+
+@app.get("/api/cambios")
+def listar_cambios(identidad: Identidad = Depends(identidad_actual)) -> list[dict]:
+    return cambios.listar(identidad)
+
+
+@app.post("/api/cambios/{cambio_id}/aprobar")
+def aprobar_cambio(cambio_id: int, identidad: Identidad = requerir_permiso("autorizar_solicitud")) -> dict:
+    return cambios.aprobar(cambio_id, identidad)
+
+
+@app.post("/api/cambios/{cambio_id}/descartar")
+def descartar_cambio(cambio_id: int, datos: cambios.Descarte, identidad: Identidad = requerir_permiso("autorizar_solicitud")) -> dict:
+    return cambios.descartar(cambio_id, datos.motivo, identidad)
 
 
 @app.post("/api/solicitudes/{solicitud_id}/reubicacion/proponer", dependencies=[requerir_permiso("autorizar_solicitud")])

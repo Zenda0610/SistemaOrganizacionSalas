@@ -109,6 +109,12 @@
       <p id="resultado-solicitudes" class="resultado" role="status"></p>
       <div id="solicitudes-registradas" class="tabla-scroll"></div>
       <div id="reubicacion-propuesta" aria-live="polite"></div>
+      <div id="editor-solicitud" class="tarjeta-propuesta editor-solicitud" hidden></div>
+      <section id="cambios-por-revisar" class="bloque-datos" aria-labelledby="titulo-cambios" hidden>
+        <h3 id="titulo-cambios">Cambios por revisar</h3>
+        <p class="ayuda">El servidor decide si un cambio es factible; la IA solo lo resume. Aprobar revalida y aplica; descartar no toca la reserva.</p>
+        <div id="lista-cambios" class="lista-cambios"></div>
+      </section>
       <aside id="asistente-coordinacion" class="asistente asistente-coordinacion" aria-labelledby="titulo-coordinacion" hidden>
         <div class="titulo-seccion"><div><p class="marca">SOLO COORDINADORA</p><h2 id="titulo-coordinacion">Asistente de coordinación</h2></div><button id="actualizar-notificaciones" type="button">Actualizar lista</button></div>
         <p class="ayuda">La lista se calcula desde la base de datos. La IA solo resume; no aprueba, bloquea ni cancela nada.</p>
@@ -158,5 +164,6 @@
   <script src="/coordinacion.js"></script>
   <script src="/comercial.js"></script>
   <script src="/seleccion.js"></script>
+  <script src="/cambios.js"></script>
 </body>
 </html>

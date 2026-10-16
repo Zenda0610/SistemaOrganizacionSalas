@@ -57,6 +57,15 @@ def resumen(ahora: datetime | None = None) -> dict:
                               + ', '.join(f"#{c['id']}" for c in cruces) + f" en {s['espacio_id']}: no se desplaza, reubicar",
                     'datos': {'solicitud': s, 'comerciales': cruces}})
 
+        for c in con.execute("SELECT id, solicitud_id, factible, creado_por, creado_en FROM cambios_solicitud "
+                             "WHERE estado = 'pendiente' ORDER BY id"):
+            c = dict(c)
+            notificaciones.append({
+                'tipo': 'cambio_por_revisar', 'nivel': IMPORTANTE,
+                'titulo': f"Cambio #{c['id']} de la reserva #{c['solicitud_id']} pedido por {c['creado_por']} · "
+                          + ('factible según el servidor' if c['factible'] else 'NO factible según el servidor'),
+                'datos': c})
+
         for i in con.execute("SELECT id, recurso_tipo, recurso_id, descripcion, prioridad, estado, creada_en "
                              "FROM incidencias WHERE estado IN ('pendiente_clasificacion', 'pendiente_revision') ORDER BY id"):
             i = dict(i)

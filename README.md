@@ -59,6 +59,8 @@ SQLite  (db.py: esquema, transacciones BEGIN IMMEDIATE)
 | `app/chat.py` | Chat de solicitudes: borradores, propuesta y confirmación |
 | `app/operaciones.py` | Equipos, préstamos, devoluciones, incidencias, revisión y bloqueos |
 | `app/coordinacion.py` | Resumen de notificaciones y asistente de IA para la coordinadora |
+| `app/tarifas.py` | Tarifa por hora editable por la coordinadora, con historial |
+| `app/cambios.py` | Cancelación, edición y cambios de reservas con revisión y análisis de IA |
 | `app/ia.py` | Cliente de IA (OpenAI-compatible u Ollama) sin respuestas simuladas |
 | `scripts/cargar_demo.py` | Carga repetible de datos ficticios en `demo.sqlite` |
 
@@ -75,6 +77,13 @@ SQLite  (db.py: esquema, transacciones BEGIN IMMEDIATE)
 5. **Área comercial** (roles estudiante y empresa): aulas libres con costo por hora y total
    estimado en COP calculados por el servidor, pedido con el chat y "Mis solicitudes" con pago
    pendiente (sin pasarela de pagos).
+6. **Tarifas editables**: la coordinadora fija la tarifa por hora de cada aula en la pestaña Aulas;
+   se conserva al recargar CSV, queda en historial y cada solicitud comercial congela su cotización.
+7. **Selección por bloques**: en el calendario, quien solicita marca franjas libres de 15 min
+   (clic, arrastre, toques o teclado) y envía la solicitud sin usar el chat.
+8. **Edición y cancelación**: el titular cancela o edita sus solicitudes futuras. Una pendiente se
+   edita y revalida al instante; en una aprobada, el cambio va a "Cambios por revisar" con el
+   veredicto del servidor y un análisis de IA, y la coordinadora lo aprueba o descarta.
 
 **Regla central:** un bloqueo confirmado por incidencia saca el aula o el equipo de
 la disponibilidad para nuevas asignaciones, pero conserva y muestra las reservas,
@@ -100,6 +109,8 @@ sesiones y préstamos afectados (no los cancela automáticamente).
 | Lo comercial solo se crea y aprueba en franjas libres; las actividades de `ACTIVIDADES_PRIORITARIAS` (SER, Zona Franca, inglés, software) están por encima | `app/solicitudes.py: crear_en, aprobar_en, academicas_prioritarias, espacios_disponibles` | Franja libre → 201 / franja con clase de SER → 409 `franja_no_libre` |
 | Académica aprobada bloquea a la comercial pendiente; una comercial aprobada no se desplaza y el cruce se escala | `app/solicitudes.py: aprobar_en, comerciales_aprobadas`; `app/coordinacion.py: resumen` | Aprobar SER → comercial queda `bloqueada_por_academica` / aprobar SER sobre comercial aprobada → 409 `comercial_aprobada` e importante |
 | Costo comercial = tarifa_hora × horas (sin tarifa: Por definir) | `app/reglas.py: costo`; `app/carga_datos.py` (tarifa ≥ 0 o vacía) | Tarifa 50.000 × 2 h = 100.000 COP / tarifa negativa se rechaza en la carga |
+| Tarifa editable solo por la coordinadora; sobrevive a la recarga de CSV; cotización congelada al crear | `app/tarifas.py: actualizar`; `app/solicitudes.py: tarifa_efectiva, crear_en` | Coordinadora fija 50.000 → 200 / profesor → 403; valor negativo o texto → 422 |
+| Cancelar o editar solo solicitudes propias y futuras; una aprobada no cambia hasta que la coordinadora decida | `app/cambios.py: cancelar, pedir_cambio, evaluar, aprobar, descartar` | Titular cancela → franja libre / otro usuario → 403; aprobar un cambio que dejó de ser factible → 409 sin cambios |
 | Notificación importante: pendiente que empieza en < 24 h o ya vencida, incidencia alta/crítica, bloqueo con afectados | `app/coordinacion.py: resumen` | Pendiente de mañana → importante / pendiente en 5 días → necesaria |
 
 ## Uso de IA en la aplicación
@@ -113,6 +124,11 @@ modelo `:free`, comprueba en el catálogo que su precio sea cero y no cambia a m
   categoría, prioridad, área y justificación de listas cerradas; se valida con Pydantic.
 - **Asistente de coordinación** (`app/coordinacion.py`): la IA resume la lista
   calculada por el servidor, sin inventar y sin ejecutar acciones.
+- **Análisis de cambios** (`app/cambios.py: analizar`): con el veredicto del servidor, la IA redacta
+  qué cambia, el impacto y una recomendación; si el servidor dice "no factible" debe recomendar
+  descartar o no se guarda. Si falla, el cambio se guarda con "Análisis de IA no disponible".
+- **Chat**: también acepta "mueve mi reserva…" o "cancela mi solicitud…" (acciones
+  `cambiar_solicitud` y `cancelar_solicitud`), siempre con confirmación explícita.
 
 **La IA propone; el servidor y la coordinadora deciden.** Los datos se envían como
 JSON con la instrucción de ignorar órdenes contenidas en ellos. Una salida inválida no
@@ -141,6 +157,10 @@ Las pruebas usan IA simulada solo dentro de los tests; no se presentan como infe
 | `gestionar_recursos` | | | | | ✔ |
 | `ver_notificaciones` (asistente) | | | | | ✔ |
 | `ver_datos` (cohortes y calidad) | | | | | ✔ |
+| `gestionar_tarifas` | | | | | ✔ |
+
+Cancelar o cambiar una solicitud lo puede hacer solo su titular; aprobar o descartar cambios, solo la
+coordinadora, y nadie revisa sus propios cambios.
 
 Sin identidad la API responde 401; sin permiso, 403. La identidad sale **solo** de
 `USUARIO_DESARROLLO` y `ROL_DESARROLLO` en el servidor: el cuerpo, las cabeceras o la
@@ -193,6 +213,7 @@ Variables del `.env` (plantilla en `.env.example`; **`.env` nunca se sube**):
 | `IA_TIMEOUT_SEGUNDOS` | tiempo máximo de respuesta de la IA |
 | `USUARIO_DESARROLLO`, `ROL_DESARROLLO` | identidad de desarrollo del servidor |
 | `RUTA_BASE_DATOS`, `RUTA_DATOS` | vacías = `gestion_salas.db` y datos por defecto |
+| `TARIFA_HORA_MAXIMA` | tope de la tarifa por hora editable (por defecto 10.000.000 COP) |
 | `ACTIVIDADES_PRIORITARIAS` | actividades por encima de lo comercial (por defecto `zona_franca,ser,ingles,software`) |
 | `MINUTOS_DEVOLUCION_ANTICIPADA`, `PORCENTAJE_AFORO_MAXIMO`, `AULA_PREFERIDA_ZONA_FRANCA` | reglas configurables |
 

@@ -118,14 +118,36 @@ CREATE TABLE IF NOT EXISTS solicitudes (
     tipo TEXT NOT NULL CHECK (tipo IN ('academica', 'comercial')),
     solicitante_id TEXT NOT NULL,
     rol_solicitante TEXT NOT NULL,
-    estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'aprobada')),
+    estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'aprobada', 'cancelada')),
     requiere_pago INTEGER NOT NULL,
     estado_pago TEXT,
     creada_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     decidida_por TEXT,
     decidida_en TEXT,
+    actividad TEXT NOT NULL DEFAULT 'otra',
+    elementos_requeridos TEXT NOT NULL DEFAULT '[]',
+    tarifa_hora_cotizada REAL,
+    cancelada_por TEXT,
+    cancelada_en TEXT,
     CHECK (fin > inicio)
 );
+-- Cambio pedido sobre una reserva aprobada: la reserva sigue vigente hasta que la coordinadora decida.
+CREATE TABLE IF NOT EXISTS cambios_solicitud (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    solicitud_id INTEGER NOT NULL REFERENCES solicitudes(id),
+    datos_antes TEXT NOT NULL,
+    datos_despues TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'aprobado', 'descartado')),
+    factible INTEGER NOT NULL,
+    motivos TEXT NOT NULL DEFAULT '[]',
+    analisis_ia TEXT,
+    creado_por TEXT NOT NULL,
+    creado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    revisado_por TEXT,
+    revisado_en TEXT,
+    motivo_descarte TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cambio_pendiente_unico ON cambios_solicitud(solicitud_id) WHERE estado = 'pendiente';
 -- Borrador del chat: pertenece a un usuario y a una conversación. Nunca se comparte.
 CREATE TABLE IF NOT EXISTS borradores_chat (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -206,9 +228,26 @@ def inicializar_base() -> None:
             for campo, tipo in columnas.items():
                 if campo not in existentes:
                     con.execute(f"ALTER TABLE {tabla} ADD COLUMN {campo} {tipo}")
+        _migrar_estado_cancelada(con)
         con.commit()
     finally:
         con.close()
+
+
+def _migrar_estado_cancelada(con) -> None:
+    """Bases anteriores: el CHECK de solicitudes no admitía 'cancelada'. SQLite no altera un CHECK,
+    así que se recrea la tabla con el esquema actual y se copian todas las filas."""
+    actual = con.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'solicitudes'").fetchone()[0]
+    if "'cancelada'" in actual:
+        return
+    columnas = [fila[1] for fila in con.execute("PRAGMA table_info(solicitudes)")]
+    inicio = ESQUEMA.index("CREATE TABLE IF NOT EXISTS solicitudes")
+    ddl = ESQUEMA[inicio:ESQUEMA.index(");", inicio) + 2]
+    con.execute("ALTER TABLE solicitudes RENAME TO solicitudes_anterior")
+    con.execute(ddl)
+    lista = ", ".join(columnas)
+    con.execute(f"INSERT INTO solicitudes ({lista}) SELECT {lista} FROM solicitudes_anterior")
+    con.execute("DROP TABLE solicitudes_anterior")
 
 
 @contextmanager

@@ -586,6 +586,9 @@ async function cargarSolicitudes() {
         cuerpo.children[indice].appendChild(celda);
       });
     }
+    // Cambiar/cancelar propias y cambios por revisar (static/cambios.js), si está cargado.
+    if (typeof agregarAccionesTitular === "function") agregarAccionesTitular(tabla, filas, sesion);
+    if (typeof cargarCambios === "function") cargarCambios(sesion);
     contenedor.replaceChildren(filas.length ? tabla : crearElemento("p", "estado", "No hay solicitudes registradas."));
     resultado.className = "resultado estado-ok";
     resultado.textContent = `${filas.length} solicitud(es) registrada(s).`;

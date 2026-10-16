@@ -18,8 +18,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import db, ia, reglas, solicitudes, reubicaciones
-from app.identidad import Identidad
+from app import cambios, db, ia, reglas, solicitudes, reubicaciones
+from app.identidad import ErrorAcceso, Identidad
 from app.permisos import tiene_permiso, tipo_solicitud_para
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
 
@@ -439,11 +439,78 @@ def _ver(identidad: Identidad) -> dict:
     return _respuesta("solicitudes", f"Tiene {len(filas)} solicitud(es).", filas)
 
 
-def _prompt(mensaje: str, borrador: dict) -> str:
+def _futuras(identidad: Identidad) -> list[dict]:
+    ahora = _fmt(datetime.now())
+    return [f for f in solicitudes.listar_solicitudes(identidad)
+            if f["estado"] in ("pendiente", "aprobada") and f["inicio"] > ahora and f["solicitante_id"] == identidad.usuario_id]
+
+
+def _describir(fila: dict) -> str:
+    return f"#{fila['id']} {fila['espacio_id']} {fila['inicio']}→{fila['fin']} ({fila['estado']})"
+
+
+def _preparar_cambio(identidad: Identidad, conversacion_id: str, borrador: dict, accion: str, parametros: dict) -> dict:
+    """Cambiar o cancelar una solicitud propia desde el chat. Nada se ejecuta sin confirmación explícita."""
+    propias = {f["id"]: f for f in _futuras(identidad)}
+    fila = propias.get(_entero_positivo(parametros.get("solicitud_id")))
+    if fila is None:
+        lista = "; ".join(_describir(f) for f in propias.values()) or "no tiene solicitudes futuras"
+        return _respuesta("aclarar_solicitud", f"¿Qué solicitud quiere {'cancelar' if accion == 'cancelar_solicitud' else 'cambiar'}? "
+                                               f"Indique su número. Sus solicitudes futuras: {lista}.")
+    pendiente = {"tipo": "cancelar" if accion == "cancelar_solicitud" else "cambiar", "solicitud_id": fila["id"]}
+    if pendiente["tipo"] == "cambiar":
+        nuevos = {"fecha": _fecha(parametros.get("fecha")) or fila["inicio"][:10],
+                  "inicio": _hora(parametros.get("inicio")) or fila["inicio"][11:],
+                  "fin": _hora(parametros.get("fin")) or fila["fin"][11:]}
+        ini, fin = _intervalo(nuevos)
+        cambio = {"inicio": _fmt(ini), "fin": _fmt(fin)}
+        if _entero_positivo(parametros.get("personas")):
+            cambio["personas"] = _entero_positivo(parametros.get("personas"))
+        if _texto(parametros.get("espacio"), 80):
+            estado, resultado = resolver_espacio(parametros["espacio"], _catalogo())
+            if estado != "ok":
+                return _respuesta("aclarar_espacio", "No identifico el aula nueva. Indique su nombre exacto.")
+            cambio["espacio_id"] = resultado["id"]
+        pendiente["cambio"] = cambio
+        detalle = f"pasar a {cambio.get('espacio_id', fila['espacio_id'])} {cambio['inicio']}→{cambio['fin']}"
+        if "personas" in cambio:
+            detalle += f", {cambio['personas']} personas"
+        efecto = ("La reserva aprobada sigue vigente y el cambio irá a revisión de la coordinadora."
+                  if fila["estado"] == "aprobada" else "Seguirá pendiente de aprobación.")
+        texto = f"Va a cambiar la solicitud {_describir(fila)}: {detalle}. {efecto} ¿Confirma? Responda «sí»."
+    else:
+        texto = (f"Va a cancelar la solicitud {_describir(fila)}. "
+                 + ("La franja se liberará de inmediato. " if fila["estado"] == "aprobada" else "")
+                 + "¿Confirma? Responda «sí».")
+    _guardar_borrador(identidad.usuario_id, conversacion_id, "propuesta", {"accion_pendiente": pendiente}, borrador)
+    return _respuesta("propuesta", texto)
+
+
+def _ejecutar_cambio(identidad: Identidad, conversacion_id: str, borrador: dict) -> dict:
+    pendiente = borrador["datos"]["accion_pendiente"]
+    # Se consume el borrador primero: una segunda confirmación no repite la acción.
+    _guardar_borrador(identidad.usuario_id, conversacion_id, "en_curso", {}, borrador)
+    try:
+        if pendiente["tipo"] == "cancelar":
+            cambios.cancelar(pendiente["solicitud_id"], identidad)
+            return _respuesta("solicitud_cancelada", f"Solicitud #{pendiente['solicitud_id']} cancelada.")
+        resultado = cambios.pedir_cambio(pendiente["solicitud_id"], cambios.Cambio(**pendiente["cambio"]), identidad)
+    except (ErrorSolicitud, ErrorAcceso) as error:
+        return _respuesta("cambio_rechazado", f"No se aplicó: {error.mensaje}")
+    if resultado["tipo"] == "edicion":
+        return _respuesta("cambio_aplicado", f"Solicitud #{pendiente['solicitud_id']} actualizada; sigue pendiente de aprobación.")
+    cambio = resultado["cambio"]
+    veredicto = "factible" if cambio["factible"] else "no factible: " + " ".join(cambio["motivos"])
+    return _respuesta("cambio_enviado", f"Cambio #{cambio['id']} enviado a la coordinadora ({veredicto}). "
+                                        "Su reserva actual sigue vigente hasta que decida.")
+
+
+def _prompt(mensaje: str, borrador: dict, identidad: Identidad | None = None) -> str:
     nombres = ", ".join(e["nombre"] for e in _catalogo())
     pendiente = ""
     if borrador["estado"] == "propuesta":
-        pendiente = f"Hay una propuesta pendiente de confirmación: {borrador['datos'].get('propuesta_nombre')}. "
+        pendiente = f"Hay una propuesta pendiente de confirmación: {borrador['datos'].get('propuesta_nombre') or borrador['datos'].get('accion_pendiente')}. "
+    propias = "; ".join(_describir(f) for f in _futuras(identidad)) if identidad else ""
     return (
         "Convierte una petición de aulas en JSON. "
         f"Hoy es {date.today().isoformat()}. Responde SOLO con un objeto JSON con las claves "
@@ -454,7 +521,12 @@ def _prompt(mensaje: str, borrador: dict) -> str:
         f"{pendiente}"
         '"confirmar" (parametros {}) solo si el usuario acepta explícitamente la propuesta pendiente; '
         '"cancelar" (parametros {}); "consultar_disponibilidad" (parametros: inicio y fin AAAA-MM-DDTHH:MM); '
-        '"ver_solicitudes" (parametros {}). Otra petición usa "accion": "no_soportada". '
+        '"ver_solicitudes" (parametros {}); '
+        '"cambiar_solicitud" (parametros: solicitud_id número de las solicitudes del usuario, y solo lo que cambia: '
+        'fecha AAAA-MM-DD, inicio y fin HH:MM, personas, espacio) para mover o ajustar una solicitud propia; '
+        '"cancelar_solicitud" (parametros: solicitud_id) para cancelar una solicitud propia. '
+        f"Solicitudes futuras del usuario: {propias or 'ninguna'}. "
+        'Otra petición usa "accion": "no_soportada". '
         "No inventes personas, horas ni identificadores. "
         "No inventes equipamiento; extrae solo elementos requeridos expresamente. No apruebes ni reubiques actividades. "
         'Si menciona una actividad como "clase de SER", "clase de inglés" o "reunión", '
@@ -474,7 +546,7 @@ def procesar(identidad: Identidad, mensaje: str, conversacion_id: str) -> dict:
     if not mensaje or len(mensaje) > MAX_MENSAJE:
         raise ErrorChat(422, "mensaje_no_valido", f"El mensaje debe tener entre 1 y {MAX_MENSAJE} caracteres.")
     borrador = _cargar_borrador(identidad.usuario_id, conversacion_id)
-    respuesta_ia = ia.consultar_ia(_prompt(mensaje, borrador))
+    respuesta_ia = ia.consultar_ia(_prompt(mensaje, borrador, identidad))
     if not respuesta_ia["ok"]:
         # El detalle técnico (URL, conexión) queda en el log; al cliente no se envía.
         logger.warning("Chat sin respuesta de la IA: %s", respuesta_ia["error"])
@@ -486,6 +558,10 @@ def procesar(identidad: Identidad, mensaje: str, conversacion_id: str) -> dict:
     accion = propuesta.get("accion")
     parametros = propuesta.get("parametros", {})
     try:
+        if accion in ("cambiar_solicitud", "cancelar_solicitud"):
+            return _preparar_cambio(identidad, conversacion_id, borrador, accion, parametros)
+        if accion == "confirmar" and borrador["estado"] == "propuesta" and borrador["datos"].get("accion_pendiente"):
+            return _ejecutar_cambio(identidad, conversacion_id, borrador)
         if accion == "solicitar_aula":
             return _solicitar(identidad, conversacion_id, borrador, parametros, mensaje)
         if accion == "confirmar":
