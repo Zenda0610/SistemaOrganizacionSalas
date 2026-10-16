@@ -1,1 +1,17 @@
 id,espacio_id,fecha,hora_inicio,hora_fin,tipo,area,es_zona_franca,grupo,nivel,cantidad_personas,responsable,estado
+DEMO-S01,DEMO-AUD,2026-10-12,08:00,10:00,clase,software,no,DEMO-Software-A,basico,30,Elena Nubes,programada
+DEMO-S02,DEMO-COS,2026-10-12,10:00,12:00,clase,ingles,no,DEMO-Ingles-A,A1,20,Tomas Brisa,programada
+DEMO-S03,DEMO-SKI,2026-10-12,14:00,16:00,clase,ser,no,DEMO-SER-A,,18,Luna Cedros,programada
+DEMO-S04,DEMO-SPO,2026-10-13,08:00,10:00,clase,software,no,DEMO-Software-B,intermedio,30,Elena Nubes,programada
+DEMO-S05,DEMO-APO,2026-10-13,10:00,12:00,clase,ingles,no,DEMO-Ingles-B,A2,30,Tomas Brisa,programada
+DEMO-S06,DEMO-BLA,2026-10-13,14:00,16:00,clase,ser,no,DEMO-SER-B,,10,Luna Cedros,programada
+DEMO-S07,DEMO-AZU,2026-10-14,08:00,10:00,clase,ser,no,DEMO-SER-C,,8,Luna Cedros,programada
+DEMO-S08,DEMO-AMV,2026-10-14,10:00,12:00,clase,ingles,no,DEMO-Ingles-C,B1,6,Tomas Brisa,programada
+DEMO-S09,DEMO-ART,2026-10-14,14:00,16:00,clase,software,no,DEMO-Software-C,avanzado,25,Elena Nubes,programada
+DEMO-S10,DEMO-AUD,2026-10-15,08:00,10:00,clase,software,si,DEMO-ZonaFranca-A,basico,40,Nicolas Sauces,programada
+DEMO-S11,DEMO-COS,2026-10-15,10:00,12:00,clase,ingles,no,DEMO-Ingles-D,A1,20,Tomas Brisa,programada
+DEMO-S12,DEMO-SKI,2026-10-16,08:00,10:00,clase,software,no,DEMO-Software-D,basico,20,Elena Nubes,programada
+DEMO-S13,DEMO-SPO,2026-10-16,10:00,12:00,alquiler,otra,no,DEMO-Alquiler-Ficticio,,30,Bruno Olmos,programada
+DEMO-S14,DEMO-SKI,2026-10-16,09:00,10:00,clase,software,si,DEMO-ZonaFranca-B,basico,18,Nicolas Sauces,programada
+DEMO-S15,DEMO-BLA,2026-10-16,10:00,11:00,clase,ser,no,DEMO-SER-Aforo,,16,Luna Cedros,programada
+DEMO-S16,DEMO-ART,2026-10-16,2,16:00,clase,software,no,DEMO-Hora-Ambigua,,20,Elena Nubes,programada

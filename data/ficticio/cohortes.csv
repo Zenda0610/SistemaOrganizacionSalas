@@ -1,1 +1,4 @@
 codigo,espacio_id,jornada,ruta,cantidad_campers,fecha_fin,trainer
+DEMO-COH-A,DEMO-SKI,manana,java,20,2026-11-30,Elena Nubes
+DEMO-COH-B,DEMO-COS,mediodia,ia,20,2026-12-15,Tomas Brisa
+DEMO-COH-C,DEMO-ART,tarde,java,25,2026-12-18,Nicolas Sauces

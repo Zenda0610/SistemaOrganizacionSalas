@@ -13,14 +13,16 @@ from tests.base_prueba import BasePrueba
 
 
 class PruebasCatalogo(BasePrueba):
-    def test_catalogo_demo_confirmado_sin_ocupaciones_inventadas(self):
+    def test_catalogo_demo_y_tres_casos_borde_documentados(self):
         config.RUTA_DATOS = str(Path(__file__).resolve().parent.parent / "data" / "ficticio")
         resultado = carga_datos.cargar_datos()
         self.assertTrue(resultado["ok"])
-        self.assertEqual(resultado["rechazados"], {"espacios.csv": 0, "sesiones.csv": 0, "cohortes.csv": 0})
+        self.assertEqual(resultado["rechazados"], {"espacios.csv": 0, "sesiones.csv": 1, "cohortes.csv": 0})
+        self.assertEqual(resultado["conflictos"], 2)
+        self.assertEqual({f['tipo'] for f in db.consultar('SELECT tipo FROM conflictos')}, {'solapamiento', 'aforo_excedido'})
         self.assertEqual(self.contar("espacios"), 9)
-        self.assertEqual(self.contar("sesiones"), 0)
-        self.assertEqual(self.contar("cohortes"), 0)
+        self.assertEqual(self.contar("sesiones"), 15)
+        self.assertEqual(self.contar("cohortes"), 3)
         with (Path(config.RUTA_DATOS) / "espacios.csv").open(encoding="utf-8") as archivo:
             datos = {r["nombre"]: int(r["aforo"]) for r in csv.DictReader(archivo)}
         self.assertEqual(datos, {"Auditorio": 100, "Cosmos": 25, "Skilab": 20, "Spooki": 38,
