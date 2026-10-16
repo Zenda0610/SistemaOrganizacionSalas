@@ -257,6 +257,14 @@ class PruebasCalendario(BaseSolicitudes):
             reserva = cliente.get("/api/reservas").json()[0]
         self.assertEqual(set(reserva), {"id", "espacio_id", "inicio", "fin", "tipo", "estado_pago"})
 
+    def test_reserva_de_varios_dias_aparece_en_cada_dia_que_ocupa(self):
+        self.aprobar_nueva("2026-11-02T20:00", "2026-11-05T06:00")
+        with TestClient(app) as cliente:
+            por_dia = {dia: len(cliente.get("/api/reservas", params={"fecha": dia}).json())
+                       for dia in ("2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06")}
+        self.assertEqual(por_dia, {"2026-11-01": 0, "2026-11-02": 1, "2026-11-03": 1,
+                                   "2026-11-04": 1, "2026-11-05": 1, "2026-11-06": 0})
+
     def test_una_solicitud_pendiente_no_aparece_en_el_calendario(self):
         self.solicitar("profesor")
         with TestClient(app) as cliente:

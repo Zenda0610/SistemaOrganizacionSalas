@@ -72,7 +72,7 @@ def _texto(momento: datetime) -> str:
     return momento.strftime(FORMATO)
 
 
-def _buscar_conflictos(con, espacio_id: str, inicio: str, fin: str, excluir_id: Optional[int] = None) -> list[dict]:
+def buscar_conflictos(con, espacio_id: str, inicio: str, fin: str, excluir_id: Optional[int] = None) -> list[dict]:
     """Sesiones programadas y reservas aprobadas que se cruzan con [inicio, fin)."""
     conflictos = []
     # Las sesiones duran dentro de un mismo día: basta revisar los días que toca el intervalo.
@@ -141,7 +141,7 @@ def aprobar_solicitud(solicitud_id: int, identidad: Identidad) -> dict:
             raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
         if fila["personas"] > espacio["aforo"]:
             raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
-        if _buscar_conflictos(con, fila["espacio_id"], fila["inicio"], fila["fin"], excluir_id=solicitud_id):
+        if buscar_conflictos(con, fila["espacio_id"], fila["inicio"], fila["fin"], excluir_id=solicitud_id):
             raise ErrorSolicitud(409, "solapamiento", "El espacio ya está ocupado en ese horario.")
         cursor = con.execute(
             "UPDATE solicitudes SET estado = 'aprobada', decidida_por = ?, decidida_en = datetime('now', 'localtime') "
@@ -176,7 +176,7 @@ def espacios_disponibles(inicio: datetime, fin: datetime, personas: Optional[int
             (personas, personas),
         ).fetchall()
         return [dict(espacio) for espacio in candidatos
-                if not _buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)]
+                if not buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)]
     finally:
         con.close()
 

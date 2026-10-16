@@ -1,7 +1,7 @@
 // Interfaz mínima: consume la API y muestra estados de carga, vacío y error.
 const API = "/api";
-const HORA_APERTURA = 6;   // debe coincidir con GRILLA_APERTURA_HORA
-const HORA_CIERRE = 18;    // debe coincidir con GRILLA_CIERRE_HORA
+const HORA_APERTURA = 0;   // vista 24/7; la carga sigue limitando las sesiones a GRILLA_APERTURA_HORA
+const HORA_CIERRE = 24;    // vista 24/7 (24 = medianoche del día siguiente)
 const PASO_MINUTOS = 15;   // debe coincidir con MINUTOS_BLOQUE
 const NOMBRES_AREA = { software: "Software", ingles: "Inglés", ser: "SER", otra: "Otra" };
 
@@ -18,7 +18,7 @@ const cargadosPorPestana = new Set();
 // Códigos que el servidor devuelve solo cuando la importación no se aplicó.
 const CODIGOS_IMPORTACION_NO_APLICADA = new Set([
   "archivo_ausente", "archivo_no_legible", "estructura_incompatible",
-  "catalogo_vacio", "error_escritura", "error_interno", "sin_identidad", "sin_permiso",
+  "catalogo_vacio", "error_escritura", "error_interno", "sin_identidad", "sin_permiso", "reserva_incompatible",
 ]);
 
 function errorResultadoDesconocido(mensaje) {
@@ -137,21 +137,59 @@ async function cargarDia(fecha) {
     mostrarEstado("grilla", "vacio", "No hay espacios cargados.");
     return;
   }
-  construirGrilla(espacios, sesiones);
+  construirGrilla(espacios, sesiones, reservas, fecha);
   pintarReservas(espacios, reservas);
   mostrarEstado("grilla", sesiones.length ? "ok" : "vacio",
     sesiones.length ? "" : `No hay sesiones programadas para ${fecha}.`);
 }
 
-function construirGrilla(espacios, sesiones) {
-  const tabla = document.getElementById("tabla-grilla");
-  const ocupacion = {};
-  sesiones.forEach((s) => {
-    for (let t = minutosDesdeHora(s.hora_inicio); t < minutosDesdeHora(s.hora_fin); t += PASO_MINUTOS) {
-      const clave = `${s.espacio_id}|${horaDesdeMinutos(t)}`;
-      (ocupacion[clave] = ocupacion[clave] || []).push(s);
-    }
+const MINUTOS_DIA = 24 * 60;
+
+function diaVecino(fecha, desplazamiento) {
+  const dia = new Date(`${fecha}T00:00:00Z`);
+  dia.setUTCDate(dia.getUTCDate() + desplazamiento);
+  return dia.toISOString().slice(0, 10);
+}
+
+// Días que ocupa una reserva, todos incluidos. Una reserva que termina exactamente a las 00:00
+// no ocupa el día siguiente.
+function fechasDeReserva(reserva) {
+  const primero = reserva.inicio.slice(0, 10);
+  const ultimo = reserva.fin.endsWith(" 00:00") ? diaVecino(reserva.fin.slice(0, 10), -1) : reserva.fin.slice(0, 10);
+  const fechas = [];
+  for (let dia = primero; dia <= ultimo; dia = diaVecino(dia, 1)) fechas.push(dia);
+  return fechas;
+}
+
+// Franjas que ocupan, dentro de un día, las sesiones no canceladas y las reservas aprobadas.
+// Minutos desde 00:00. Una reserva que cruza medianoche se recorta a cada día: 00:00–24:00 en el
+// día intermedio y así sucesivamente. Las sesiones canceladas no ocupan franjas.
+function bloquesDelDia(fecha, sesiones, reservas) {
+  const bloques = [];
+  sesiones.filter((s) => s.estado !== "cancelada").forEach((s) => bloques.push({
+    espacioId: s.espacio_id,
+    inicio: minutosDesdeHora(s.hora_inicio),
+    fin: minutosDesdeHora(s.hora_fin),
+    reserva: false,
+    datos: s,
+  }));
+  reservas.forEach((r) => {
+    const diaInicio = r.inicio.slice(0, 10);
+    const diaFin = r.fin.slice(0, 10);
+    if (diaInicio > fecha || diaFin < fecha) return;
+    const inicio = diaInicio < fecha ? 0 : minutosDesdeHora(r.inicio.slice(11));
+    const fin = diaFin > fecha ? MINUTOS_DIA : minutosDesdeHora(r.fin.slice(11));
+    if (fin > inicio) bloques.push({ espacioId: r.espacio_id, inicio, fin, reserva: true, datos: r });
   });
+  bloques.forEach((a) => {
+    a.enConflicto = bloques.some((b) => b !== a && b.espacioId === a.espacioId && b.inicio < a.fin && a.inicio < b.fin);
+  });
+  return bloques;
+}
+
+function construirGrilla(espacios, sesiones, reservas, fecha) {
+  const tabla = document.getElementById("tabla-grilla");
+  const bloques = bloquesDelDia(fecha, sesiones, reservas);
 
   const cabecera = crearElemento("tr");
   cabecera.appendChild(crearElemento("th", "hora", "Hora"));
@@ -161,16 +199,12 @@ function construirGrilla(espacios, sesiones) {
 
   const cuerpo = crearElemento("tbody");
   for (let t = HORA_APERTURA * 60; t < HORA_CIERRE * 60; t += PASO_MINUTOS) {
-    const hora = horaDesdeMinutos(t);
     const fila = crearElemento("tr");
-    const celdaHora = crearElemento("td", "hora", t % 60 === 0 ? hora : "");
-    fila.appendChild(celdaHora);
+    fila.appendChild(crearElemento("td", "hora", t % 60 === 0 ? horaDesdeMinutos(t) : ""));
     espacios.forEach((e) => {
       const celda = crearElemento("td", "celda");
-      const enCelda = ocupacion[`${e.id}|${hora}`] || [];
-      enCelda
-        .filter((s) => s.hora_inicio === hora)   // el bloque se dibuja en su primera franja
-        .forEach((s) => celda.appendChild(crearBloque(s, enCelda.length > 1)));
+      bloques.filter((b) => b.espacioId === e.id && b.inicio === t)  // el bloque se dibuja en su primera franja
+        .forEach((b) => celda.appendChild(crearBloque(b)));
       fila.appendChild(celda);
     });
     cuerpo.appendChild(fila);
@@ -178,26 +212,26 @@ function construirGrilla(espacios, sesiones) {
   tabla.appendChild(cuerpo);
 }
 
-function crearBloque(sesion, enConflicto) {
-  const clases = ["bloque", `area-${sesion.area}`];
-  if (sesion.es_zona_franca) clases.push("zona-franca");
-  if (sesion.tipo === "alquiler") clases.push("alquiler");
-  if (sesion.estado === "cancelada") clases.push("cancelada");
-  if (enConflicto) clases.push("conflicto");
-  const bloque = crearElemento("div", clases.join(" "));
-  bloque.title = `${sesion.id} · ${sesion.tipo} · ${sesion.grupo} · ${sesion.responsable} · ${sesion.hora_inicio}-${sesion.hora_fin}`;
-  bloque.textContent = `${sesion.grupo} · ${sesion.responsable}`;
-  const franjas = (minutosDesdeHora(sesion.hora_fin) - minutosDesdeHora(sesion.hora_inicio)) / PASO_MINUTOS;
-  bloque.style.height = `${franjas * 22 - 2}px`;  // 22 px es la altura de una franja en styles.css
-  return bloque;
-}
-
-// Días que ocupa una reserva. Un intervalo que cruza medianoche ocupa dos días;
-// uno que termina exactamente a las 00:00 no ocupa el día siguiente.
-function fechasDeReserva(reserva) {
-  const fechas = [reserva.inicio.slice(0, 10)];
-  if (!reserva.fin.endsWith(" 00:00")) fechas.push(reserva.fin.slice(0, 10));
-  return fechas;
+function crearBloque(bloque) {
+  const altura = ((bloque.fin - bloque.inicio) / PASO_MINUTOS) * 22 - 2;  // 22 px es la altura de una franja (styles.css)
+  if (bloque.reserva) {
+    const r = bloque.datos;
+    const clases = ["bloque", "reserva", r.tipo === "comercial" ? "comercial" : "academica"];
+    if (bloque.enConflicto) clases.push("conflicto");
+    const elemento = crearElemento("div", clases.join(" "), "Reserva aprobada");
+    elemento.title = `Reserva aprobada · ${r.inicio} → ${r.fin}`;
+    elemento.style.height = `${altura}px`;
+    return elemento;
+  }
+  const s = bloque.datos;
+  const clases = ["bloque", `area-${s.area}`];
+  if (s.es_zona_franca) clases.push("zona-franca");
+  if (s.tipo === "alquiler") clases.push("alquiler");
+  if (bloque.enConflicto) clases.push("conflicto");
+  const elemento = crearElemento("div", clases.join(" "), `${s.grupo} · ${s.responsable}`);
+  elemento.title = `${s.id} · ${s.tipo} · ${s.grupo} · ${s.responsable} · ${s.hora_inicio}-${s.hora_fin}`;
+  elemento.style.height = `${altura}px`;
+  return elemento;
 }
 
 function pintarReservas(espacios, reservas) {

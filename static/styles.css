@@ -194,3 +194,5 @@ table.grilla td.celda { position: relative; }
 .resultado { font-size: 0.95rem; margin: 8px 0 12px; min-height: 1.2em; }
 .resultado.estado-ok { color: var(--ok); }
 .resultado.estado-error { color: var(--error); }
+
+.bloque.reserva { border: 2px dashed var(--acento); background: transparent; }

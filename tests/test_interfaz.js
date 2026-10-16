@@ -131,6 +131,14 @@ const casos = [
       assert.match(texto, /Se conservaron los datos anteriores/);
     },
   },
+  {
+    nombre: "reserva incompatible (409): se indica que no se aplicó y que se conservaron los datos",
+    respuesta: () => respuestaJson(409, { mensaje: "La importación se canceló.", codigo: "reserva_incompatible", archivo: "sesiones.csv" }),
+    esperado: (texto) => {
+      assert.match(texto, /no se aplicó \(reserva_incompatible\)/);
+      assert.match(texto, /Se conservaron los datos anteriores/);
+    },
+  },
   casoContratoInvalido("cuerpo {}", {}),
   casoContratoInvalido("cuerpo []", []),
   casoContratoInvalido("cuerpo null", null),
@@ -171,6 +179,93 @@ const casos = [
     fallos += 1;
     console.log("FAIL - días de reserva\n     ", error.message.split("\n")[0]);
   }
+  // Ocupación visual: franjas por día, reservas nocturnas, multidía, cancelaciones y conflictos.
+  const aux = cargarInterfaz(() => respuestaJson(200, {}));
+  const bloques = (fecha, sesiones, reservas) => JSON.parse(vm.runInContext(
+    `JSON.stringify(bloquesDelDia(${JSON.stringify(fecha)}, ${JSON.stringify(sesiones)}, ${JSON.stringify(reservas)}))`,
+    aux.contexto));
+  const fechas = (reserva) => JSON.parse(vm.runInContext(`JSON.stringify(fechasDeReserva(${JSON.stringify(reserva)}))`, aux.contexto));
+  const prueba = (nombre, fn) => {
+    try {
+      fn();
+      console.log("ok   -", nombre);
+    } catch (error) {
+      fallos += 1;
+      console.log("FAIL -", nombre, "\n     ", error.message.split("\n")[0]);
+    }
+  };
+  const nocturna = { id: 1, espacio_id: "E01", inicio: "2026-10-20 22:00", fin: "2026-10-21 02:00", tipo: "academica" };
+  const varios = { id: 2, espacio_id: "E01", inicio: "2026-11-02 20:00", fin: "2026-11-05 06:00", tipo: "comercial" };
+  const franjas = (lista) => lista.map((b) => [b.inicio, b.fin]);
+
+  prueba("reserva nocturna: 22:00–24:00 el primer día y 00:00–02:00 el siguiente", () => {
+    assert.deepStrictEqual(franjas(bloques("2026-10-20", [], [nocturna])), [[1320, 1440]]);
+    assert.deepStrictEqual(franjas(bloques("2026-10-21", [], [nocturna])), [[0, 120]]);
+    assert.deepStrictEqual(bloques("2026-10-22", [], [nocturna]), []);
+  });
+  prueba("reserva de varios días ocupa cada día, completo en los intermedios", () => {
+    assert.deepStrictEqual(franjas(bloques("2026-11-02", [], [varios])), [[1200, 1440]]);
+    assert.deepStrictEqual(franjas(bloques("2026-11-03", [], [varios])), [[0, 1440]]);
+    assert.deepStrictEqual(franjas(bloques("2026-11-04", [], [varios])), [[0, 1440]]);
+    assert.deepStrictEqual(franjas(bloques("2026-11-05", [], [varios])), [[0, 360]]);
+    assert.deepStrictEqual(bloques("2026-11-06", [], [varios]), []);
+  });
+  prueba("los días de una reserva de varios días se añaden todos al selector", () => {
+    assert.deepStrictEqual(fechas(varios), ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]);
+  });
+  prueba("una reserva que termina a las 00:00 no ocupa el día siguiente", () => {
+    const hasta_medianoche = { ...nocturna, fin: "2026-10-21 00:00" };
+    assert.deepStrictEqual(fechas(hasta_medianoche), ["2026-10-20"]);
+    assert.deepStrictEqual(bloques("2026-10-21", [], [hasta_medianoche]), []);
+  });
+  prueba("una sesión cancelada no ocupa franjas; una programada sí", () => {
+    const sesion = { id: "S1", espacio_id: "E01", fecha: "2026-10-20", hora_inicio: "08:00", hora_fin: "10:00", area: "software", tipo: "clase", estado: "cancelada" };
+    assert.deepStrictEqual(bloques("2026-10-20", [sesion], []), []);
+    assert.deepStrictEqual(franjas(bloques("2026-10-20", [{ ...sesion, estado: "programada" }], [])), [[480, 600]]);
+  });
+  prueba("reservas consecutivas no se marcan como conflicto", () => {
+    const a = { id: 3, espacio_id: "E01", inicio: "2026-11-02 08:00", fin: "2026-11-02 09:00", tipo: "academica" };
+    const b = { id: 4, espacio_id: "E01", inicio: "2026-11-02 09:00", fin: "2026-11-02 10:00", tipo: "academica" };
+    assert.ok(bloques("2026-11-02", [], [a, b]).every((x) => x.enConflicto === false));
+  });
+  prueba("una sesión programada y una reserva solapadas se marcan en conflicto", () => {
+    const sesion = { id: "S2", espacio_id: "E01", fecha: "2026-11-02", hora_inicio: "09:00", hora_fin: "10:00", area: "software", tipo: "clase", estado: "programada" };
+    const reserva = { id: 5, espacio_id: "E01", inicio: "2026-11-02 08:30", fin: "2026-11-02 09:30", tipo: "academica" };
+    assert.ok(bloques("2026-11-02", [sesion], [reserva]).every((x) => x.enConflicto === true));
+  });
+  // Render de la grilla con un DOM mínimo: 24 horas en franjas de 15 minutos y bloques de reserva.
+  const nodo = (etiqueta) => ({
+    etiqueta, className: "", textContent: "", title: "", style: {}, hijos: [],
+    appendChild(hijo) { this.hijos.push(hijo); return hijo; },
+    replaceChildren(...nodos) { this.hijos = nodos; },
+    querySelector(selector) { return this.hijos.find((h) => h.etiqueta === selector); },
+  });
+  const pintar = (fecha, sesiones, reservas) => {
+    const tabla = nodo("table");
+    const grilla = cargarInterfaz(() => respuestaJson(200, {}));
+    grilla.contexto.document.getElementById = () => tabla;
+    grilla.contexto.document.createElement = nodo;
+    Object.assign(grilla.contexto, { espacios: [{ id: "E01", nombre: "Auditorio", aforo: 100 }], sesiones, reservas, fecha });
+    vm.runInContext("construirGrilla(espacios, sesiones, reservas, fecha)", grilla.contexto);
+    return tabla.hijos.find((h) => h.etiqueta === "tbody").hijos;
+  };
+  const bloquesEnCelda = (filas, indiceFila) => filas[indiceFila].hijos[1].hijos;
+
+  prueba("la grilla cubre 24 horas en franjas de 15 minutos", () => {
+    assert.strictEqual(pintar("2026-10-20", [], []).length, 96);
+  });
+  prueba("la reserva nocturna se dibuja de 22:00 a 24:00 con su altura, y de 00:00 a 02:00 al día siguiente", () => {
+    const filas = pintar("2026-10-20", [], [nocturna]);
+    const bloque = bloquesEnCelda(filas, 88)[0];   // 22:00 = fila 88
+    assert.ok(bloque.className.includes("reserva"));
+    assert.strictEqual(bloque.style.height, "174px");  // 8 franjas de 22 px menos 2 px
+    const siguiente = pintar("2026-10-21", [], [nocturna]);
+    assert.ok(bloquesEnCelda(siguiente, 0)[0].className.includes("reserva"));
+  });
+  prueba("una sesión cancelada no se dibuja como ocupación", () => {
+    const cancelada = { id: "S9", espacio_id: "E01", fecha: "2026-10-20", hora_inicio: "08:00", hora_fin: "10:00", area: "software", tipo: "clase", estado: "cancelada" };
+    assert.strictEqual(bloquesEnCelda(pintar("2026-10-20", [cancelada], []), 32).length, 0);
+  });
   // La sesión muestra la identidad de desarrollo y el aviso de que no es autenticación.
   const sesion = cargarInterfaz(() => respuestaJson(200, {}));
   await vm.runInContext("cargarSesion()", sesion.contexto);

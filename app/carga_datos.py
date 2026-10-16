@@ -14,7 +14,7 @@ from typing import Callable, Optional
 
 from pydantic import ValidationError
 
-from app import config, db
+from app import config, db, solicitudes
 from app.modelos import Cohorte, Espacio, Sesion
 
 logger = logging.getLogger(__name__)
@@ -377,6 +377,40 @@ def _resumen(validados: dict, conflictos: int) -> dict:
     }
 
 
+def _verificar_reservas_aprobadas(con) -> None:
+    """Rechaza la importación si una reserva aprobada no encaja con los datos entrantes.
+
+    Corre dentro de la transacción: si lanza ErrorImportacion, el reemplazo completo se revierte.
+    No cancela ni mueve reservas: solo informa.
+    """
+    reservas = con.execute(
+        "SELECT id, espacio_id, inicio, fin, personas FROM solicitudes WHERE estado = 'aprobada' ORDER BY id"
+    ).fetchall()
+    for reserva in reservas:
+        espacio = con.execute("SELECT aforo, estado FROM espacios WHERE id = ?", (reserva["espacio_id"],)).fetchone()
+        motivo = archivo = None
+        if espacio is None:
+            motivo, archivo = "ya no tiene espacio en espacios.csv", ARCHIVO_ESPACIOS
+        elif espacio["estado"] != "activo":
+            motivo, archivo = "su espacio no está activo en espacios.csv", ARCHIVO_ESPACIOS
+        elif reserva["personas"] > espacio["aforo"]:
+            motivo, archivo = f"supera el aforo de {espacio['aforo']} que tendría el espacio en espacios.csv", ARCHIVO_ESPACIOS
+        else:
+            cruces = [c for c in solicitudes.buscar_conflictos(
+                con, reserva["espacio_id"], reserva["inicio"], reserva["fin"], excluir_id=reserva["id"])
+                if c["tipo"] == "sesion"]
+            if cruces:
+                motivo = f"se cruza con la sesión {cruces[0]['referencia']} de sesiones.csv"
+                archivo = ARCHIVO_SESIONES
+        if motivo:
+            raise ErrorImportacion(
+                "reserva_incompatible", archivo,
+                f"La importación se canceló: la reserva {reserva['id']} aprobada {motivo}. "
+                "La carga anterior se conserva. El sistema no cancela ni mueve reservas; "
+                "resuelva la incompatibilidad antes de importar.",
+            )
+
+
 def _importar() -> dict:
     """Importa los CSV reemplazando la carga anterior, solo si todos los archivos obligatorios sirven.
 
@@ -393,6 +427,9 @@ def _importar() -> dict:
     try:
         with db.transaccion() as con:
             conflictos = _escribir(con, validados)
+            _verificar_reservas_aprobadas(con)
+    except ErrorImportacion as error:  # la transacción ya revirtió el reemplazo
+        return {"ok": False, "error": error.a_dict()}
     except Exception as error:  # la transacción ya revirtió el reemplazo
         logger.exception("Error al escribir la importación: %s", error)
         return {"ok": False, "error": ErrorImportacion("error_escritura", None,

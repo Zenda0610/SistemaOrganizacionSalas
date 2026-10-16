@@ -39,6 +39,7 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 - Se corrige solo lo inequívoco, por ejemplo `CANCELADO` a `cancelada`. Cada corrección queda registrada.
 - Una hora sin AM/PM se rechaza. No se adivina.
 - Los solapamientos, los aforos excedidos y las cohortes vencidas se cargan y se marcan como conflictos. No se rechazan.
+- Las sesiones deben caer en la grilla operativa (`GRILLA_APERTURA_HORA` a `GRILLA_CIERRE_HORA`). La vista del calendario es de 24 horas, pero esta regla de carga no cambia.
 - Una importación reemplaza la carga anterior solo si los tres archivos obligatorios existen, se pueden leer y tienen las columnas requeridas. Si algo de eso falla, la base queda como estaba.
 - Cada intento de importación queda registrado en la tabla `importaciones`, también cuando falla.
 - `espacios.csv` sin filas válidas se rechaza (`catalogo_vacio`) y conserva los datos anteriores. Las sesiones y las cohortes vacías, en cambio, son válidas.
@@ -85,8 +86,9 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 - **Solicitud comercial:** queda con `requiere_pago = true` y `estado_pago = "pendiente"`. El sistema no cobra ni verifica pagos. No hay tarifas definidas.
 - **Aprobar:** `POST /api/solicitudes/{id}/aprobar`, solo para la coordinadora. La aprobación vuelve a validar, dentro de una transacción `BEGIN IMMEDIATE`, el estado del espacio, el aforo y los solapamientos con sesiones programadas y con reservas aprobadas. Dos aprobaciones simultáneas se ejecutan en serie. Nadie aprueba su propia solicitud.
 - **Listar:** `GET /api/solicitudes`. La coordinadora ve todas; los demás roles, solo las suyas.
-- **Calendario:** `GET /api/reservas?fecha=AAAA-MM-DD` devuelve las reservas aprobadas que ocupan ese día, sin datos del solicitante. La grilla muestra una lista de reservas del día, y su selector de fechas incluye los días de las reservas.
+- **Calendario (solo lectura):** `GET /api/reservas?fecha=AAAA-MM-DD` devuelve las reservas aprobadas que ocupan ese día, sin datos del solicitante. La grilla dibuja sesiones y reservas en 24 horas. Una reserva que cruza medianoche se recorta a cada día, y una de varios días aparece en todos los días que ocupa. Las sesiones canceladas no ocupan franjas. El selector de fechas incluye todos los días ocupados; un intervalo que termina exactamente a las 00:00 no ocupa el día siguiente. La tabla de reservas del día queda como detalle.
 - **Recargar datos:** no borra las reservas aprobadas. La tabla `solicitudes` no tiene llave foránea hacia `espacios` por esa razón.
+- **Recarga compatible con reservas:** antes de confirmar, la importación verifica cada reserva aprobada contra los datos entrantes: que el espacio exista y esté activo, que el aforo alcance y que no se cruce con una sesión programada. Si alguna falla, se rechaza toda la importación con `reserva_incompatible` (409) y la base queda como estaba. El sistema no cancela ni mueve reservas; la incompatibilidad se resuelve antes de importar.
 
 **Pendiente de definir:**
 - Reubicaciones, chat y flujo comercial completo (pago, tarifas, rechazo de solicitudes).

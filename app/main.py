@@ -162,6 +162,7 @@ CODIGOS_HTTP_IMPORTACION = {
     "error_escritura": 500,
     "error_interno": 500,
     "catalogo_vacio": 422,
+    "reserva_incompatible": 409,
 }
 
 
