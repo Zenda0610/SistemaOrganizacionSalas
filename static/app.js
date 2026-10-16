@@ -316,12 +316,29 @@ function mostrarResultadoImportacion(tipo, texto) {
   caja.textContent = texto;
 }
 
+function esEnteroNoNegativo(valor) {
+  return Number.isInteger(valor) && valor >= 0;
+}
+
+// Contrato de POST /api/datos/recargar en éxito. Cualquier otra forma
+// no demuestra que la importación se aplicó.
+function contratoRecargaValido(datos) {
+  if (datos === null || typeof datos !== "object" || Array.isArray(datos)) return false;
+  if (datos.ok !== true) return false;
+  const cargados = datos.cargados;
+  if (cargados === null || typeof cargados !== "object" || Array.isArray(cargados)) return false;
+  return Object.values(cargados).every(esEnteroNoNegativo) && esEnteroNoNegativo(datos.conflictos);
+}
+
 async function recargarDatos() {
   const boton = document.getElementById("boton-recargar");
   boton.disabled = true;
   mostrarEstado("calidad", "cargando", "Importando datos…");
   try {
     const resumen = await pedir("/datos/recargar", { method: "POST" });
+    if (!contratoRecargaValido(resumen)) {
+      throw errorResultadoDesconocido("La respuesta del servidor no tiene el formato esperado.");
+    }
     mostrarResultadoImportacion("ok", `Importación correcta. Cargados: ${JSON.stringify(resumen.cargados)}. Conflictos: ${resumen.conflictos}.`);
     cargadosPorPestana.clear();
   } catch (error) {

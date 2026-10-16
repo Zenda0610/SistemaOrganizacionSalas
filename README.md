@@ -42,6 +42,7 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 - `espacios.csv` sin filas válidas se rechaza (`catalogo_vacio`) y conserva los datos anteriores. Las sesiones y las cohortes vacías, en cambio, son válidas.
 - Los detalles técnicos de un error (rutas, excepciones) solo van al log del servidor. La API responde con un mensaje general y un código.
 - La interfaz distingue dos casos. Un código de error confirmado indica que la importación no se aplicó y que se conservaron los datos anteriores. Un fallo de red o una respuesta no interpretable significa que el resultado es desconocido: la interfaz pide consultar la última importación antes de repetirla.
+Una respuesta 200 solo se muestra como importación correcta si cumple el contrato: `ok` es `true`, `cargados` es un objeto con conteos enteros no negativos y `conflictos` es un entero no negativo. Cualquier otra forma se trata como resultado desconocido.
 - El arranque de la aplicación no importa datos. La importación es explícita.
 
 ### Reglas de negocio (fase 2, pendientes)

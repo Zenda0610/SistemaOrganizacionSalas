@@ -48,6 +48,20 @@ function cargarInterfaz(respuestaImportacion) {
   return { contexto, banner: () => elementos["resultado-importacion"].textContent };
 }
 
+// Respuesta 200 cuyo cuerpo no cumple el contrato de éxito: el resultado es desconocido.
+function casoContratoInvalido(nombre, cuerpo) {
+  return {
+    nombre: `contrato inválido (${nombre}): resultado desconocido, sin éxito`,
+    respuesta: () => respuestaJson(200, cuerpo),
+    esperado: (texto) => {
+      assert.match(texto, /No se pudo confirmar/);
+      assert.match(texto, /última importación/);
+      assert.doesNotMatch(texto, /Importación correcta/);
+      assert.doesNotMatch(texto, /conservaron/);
+    },
+  };
+}
+
 const casos = [
   {
     nombre: "error confirmado del servidor: se indica que no se aplicó y que se conservaron los datos",
@@ -91,10 +105,28 @@ const casos = [
     },
   },
   {
-    nombre: "importación correcta",
+    nombre: "importación correcta con el contrato completo",
     respuesta: () => respuestaJson(200, { ok: true, cargados: { "espacios.csv": 10 }, conflictos: 5 }),
-    esperado: (texto) => assert.match(texto, /Importación correcta/),
+    esperado: (texto) => {
+      assert.match(texto, /Importación correcta/);
+      assert.match(texto, /"espacios\.csv":10/);
+      assert.match(texto, /Conflictos: 5/);
+      assert.doesNotMatch(texto, /undefined/);
+    },
   },
+  casoContratoInvalido("cuerpo {}", {}),
+  casoContratoInvalido("cuerpo []", []),
+  casoContratoInvalido("cuerpo null", null),
+  casoContratoInvalido("ok:false con 200", { ok: false, cargados: { "espacios.csv": 10 }, conflictos: 0 }),
+  casoContratoInvalido("ok ausente", { cargados: { "espacios.csv": 10 }, conflictos: 0 }),
+  casoContratoInvalido("cargados ausente", { ok: true, conflictos: 0 }),
+  casoContratoInvalido("cargados es un array", { ok: true, cargados: [10], conflictos: 0 }),
+  casoContratoInvalido("conteo negativo", { ok: true, cargados: { "espacios.csv": -1 }, conflictos: 0 }),
+  casoContratoInvalido("conteo decimal", { ok: true, cargados: { "espacios.csv": 1.5 }, conflictos: 0 }),
+  casoContratoInvalido("conteo como texto", { ok: true, cargados: { "espacios.csv": "10" }, conflictos: 0 }),
+  casoContratoInvalido("conflictos ausente", { ok: true, cargados: { "espacios.csv": 10 } }),
+  casoContratoInvalido("conflictos negativo", { ok: true, cargados: { "espacios.csv": 10 }, conflictos: -2 }),
+  casoContratoInvalido("conflictos como texto", { ok: true, cargados: { "espacios.csv": 10 }, conflictos: "5" }),
 ];
 
 (async () => {
