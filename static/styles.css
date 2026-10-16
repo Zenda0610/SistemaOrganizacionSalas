@@ -105,7 +105,7 @@ body {
 
 /* --- Contenido ----------------------------------------------------------------- */
 .area-principal { min-width: 0; padding: 26px 32px 0; max-width: 1600px; }
-.saludo { font-size: 1.7rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.saludo { font-size: 2.2rem; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .aviso { margin: 0 0 22px; font-size: 0.82rem; color: var(--texto-suave); }
 
 .panel { display: none; }

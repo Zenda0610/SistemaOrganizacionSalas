@@ -455,7 +455,7 @@ async function cargarSesion() {
   try {
     const sesion = await pedir("/sesion");
     aviso.textContent = `USUARIO DE DESARROLLO: ${sesion.usuario_id} (rol ${sesion.rol}). No es autenticación.`;
-    document.getElementById("saludo").textContent = `Hola, ${sesion.usuario_id}`;
+    document.getElementById("saludo").textContent = `Hola, ${sesion.usuario_id} 👋`;
     document.getElementById("rol-activo").textContent = sesion.rol;
     document.getElementById("avatar").textContent = sesion.usuario_id.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
     // Solo oculta la pestaña; el servidor responde 403 a /cohortes y /calidad-datos para otros roles.
