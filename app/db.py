@@ -7,6 +7,45 @@ from typing import Iterator
 from app import config
 
 ESQUEMA = """
+CREATE TABLE IF NOT EXISTS equipos (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('disponible','mantenimiento','inhabilitado')),
+    ficticio INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS prestamos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipo_id TEXT NOT NULL REFERENCES equipos(id),
+    responsable TEXT NOT NULL,
+    prestado_por TEXT NOT NULL,
+    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    devuelto_en TEXT,
+    devuelto_por TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS prestamo_activo_equipo ON prestamos(equipo_id) WHERE devuelto_en IS NULL;
+CREATE TABLE IF NOT EXISTS incidencias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    descripcion TEXT NOT NULL,
+    recurso_tipo TEXT NOT NULL CHECK (recurso_tipo IN ('aula','equipo')),
+    recurso_id TEXT NOT NULL,
+    reportada_por TEXT NOT NULL,
+    creada_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    categoria TEXT,
+    prioridad TEXT,
+    area TEXT,
+    justificacion TEXT,
+    estado TEXT NOT NULL DEFAULT 'pendiente_clasificacion',
+    revisada_por TEXT,
+    revisada_en TEXT
+);
+CREATE TABLE IF NOT EXISTS bloqueos (
+    recurso_tipo TEXT NOT NULL,
+    recurso_id TEXT NOT NULL,
+    incidencia_id INTEGER NOT NULL REFERENCES incidencias(id),
+    confirmado_por TEXT NOT NULL,
+    confirmado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (recurso_tipo,recurso_id)
+);
 CREATE TABLE IF NOT EXISTS espacios (
     id TEXT PRIMARY KEY,
     nombre TEXT NOT NULL,
@@ -68,15 +107,57 @@ CREATE TABLE IF NOT EXISTS conflictos (
     referencia_relacionada TEXT,
     descripcion TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS errores_carga (
+-- espacio_id no tiene llave foránea: la recarga reemplaza la tabla espacios y no debe borrar reservas.
+CREATE TABLE IF NOT EXISTS solicitudes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    archivo TEXT NOT NULL,
+    espacio_id TEXT NOT NULL,
+    inicio TEXT NOT NULL,
+    fin TEXT NOT NULL,
+    personas INTEGER NOT NULL CHECK (personas > 0),
+    descripcion TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('academica', 'comercial')),
+    solicitante_id TEXT NOT NULL,
+    rol_solicitante TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'aprobada')),
+    requiere_pago INTEGER NOT NULL,
+    estado_pago TEXT,
+    creada_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    decidida_por TEXT,
+    decidida_en TEXT,
+    CHECK (fin > inicio)
+);
+-- Borrador del chat: pertenece a un usuario y a una conversación. Nunca se comparte.
+CREATE TABLE IF NOT EXISTS borradores_chat (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id TEXT NOT NULL,
+    conversacion_id TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('en_curso', 'propuesta', 'creada', 'cancelado')),
+    datos TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (usuario_id, conversacion_id)
+);
+CREATE TABLE IF NOT EXISTS importaciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_hora TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    exito INTEGER NOT NULL,
+    codigo TEXT,
+    archivo TEXT,
     mensaje TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reubicaciones (
+    id TEXT PRIMARY KEY,
+    solicitud_id INTEGER NOT NULL,
+    datos TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('propuesta', 'aplicada')),
+    propuesta_por TEXT NOT NULL,
+    autorizada_por TEXT,
+    autorizada_en TEXT
 );
 """
 
 # Orden de borrado: primero las tablas hijas, para respetar las llaves foráneas.
-TABLAS_CARGA = ("conflictos", "correcciones", "registros_rechazados", "errores_carga", "cohortes", "sesiones", "espacios")
+# `importaciones` no entra: el historial de intentos sobrevive a cada reemplazo.
+TABLAS_CARGA = ("conflictos", "correcciones", "registros_rechazados", "cohortes", "sesiones", "espacios")
 
 
 def conectar() -> sqlite3.Connection:
@@ -88,11 +169,27 @@ def conectar() -> sqlite3.Connection:
     return con
 
 
+def aula_bloqueada(con, identificador) -> bool:
+    return con.execute("SELECT 1 FROM bloqueos WHERE recurso_tipo='aula' AND recurso_id=?", (identificador,)).fetchone() is not None
+
+
 def inicializar_base() -> None:
     """Crea las tablas si no existen."""
     con = conectar()
     try:
         con.executescript(ESQUEMA)
+        con.execute("BEGIN IMMEDIATE")
+        ampliaciones = {
+            "espacios": {"elementos": "TEXT"},
+            "sesiones": {"elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
+            "solicitudes": {"actividad": "TEXT NOT NULL DEFAULT 'otra'",
+                            "elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
+        }
+        for tabla, columnas in ampliaciones.items():
+            existentes = {fila[1] for fila in con.execute(f"PRAGMA table_info({tabla})")}
+            for campo, tipo in columnas.items():
+                if campo not in existentes:
+                    con.execute(f"ALTER TABLE {tabla} ADD COLUMN {campo} {tipo}")
         con.commit()
     finally:
         con.close()
@@ -100,9 +197,14 @@ def inicializar_base() -> None:
 
 @contextmanager
 def transaccion() -> Iterator[sqlite3.Connection]:
-    """Entrega una conexión dentro de una transacción: confirma al final o revierte si falla."""
+    """Entrega una conexión dentro de una transacción: confirma al final o revierte si falla.
+
+    BEGIN IMMEDIATE toma el bloqueo de escritura desde el inicio: dos importaciones
+    simultáneas no pueden intercalarse.
+    """
     con = conectar()
     try:
+        con.execute("BEGIN IMMEDIATE")
         yield con
         con.commit()
     except Exception:

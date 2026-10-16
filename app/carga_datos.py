@@ -14,7 +14,7 @@ from typing import Callable, Optional
 
 from pydantic import ValidationError
 
-from app import config, db
+from app import config, db, solicitudes
 from app.modelos import Cohorte, Espacio, Sesion
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ ARCHIVO_ESPACIOS = "espacios.csv"
 ARCHIVO_SESIONES = "sesiones.csv"
 ARCHIVO_COHORTES = "cohortes.csv"
 
-CAMPOS_OPCIONALES = {"nivel"}
+CAMPOS_OPCIONALES = {"nivel", "elementos", "elementos_requeridos"}
 ALIAS_VALORES = {"cancelado": "cancelada", "programado": "programada"}
 CATALOGOS = {
     ARCHIVO_ESPACIOS: {
@@ -55,6 +55,28 @@ TRADUCCIONES = {
 
 class ErrorFila(Exception):
     """Motivo legible por el que una fila no es válida."""
+
+
+class ErrorImportacion(Exception):
+    """Problema con un archivo obligatorio. Detiene la importación antes de tocar la base."""
+
+    def __init__(self, codigo: str, archivo: Optional[str], mensaje: str):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.archivo = archivo
+        self.mensaje = mensaje
+
+    def a_dict(self) -> dict:
+        return {"codigo": self.codigo, "archivo": self.archivo, "mensaje": self.mensaje}
+
+
+# Columnas que deben existir en cada CSV. Si falta una, la importación se detiene.
+COLUMNAS_REQUERIDAS = {
+    ARCHIVO_ESPACIOS: ("id", "nombre", "tipo", "aforo", "estado"),
+    ARCHIVO_SESIONES: ("id", "espacio_id", "fecha", "hora_inicio", "hora_fin", "tipo", "area",
+                       "es_zona_franca", "grupo", "cantidad_personas", "responsable", "estado"),
+    ARCHIVO_COHORTES: ("codigo", "espacio_id", "jornada", "ruta", "cantidad_campers", "fecha_fin", "trainer"),
+}
 
 
 # --- Normalización de valores ---------------------------------------------------
@@ -90,6 +112,10 @@ def _preparar_fila(datos: dict, catalogos: dict, correcciones: list) -> dict:
         fila["es_zona_franca"] = _si_no_a_booleano(fila["es_zona_franca"])
     if fila.get("nivel") == "":
         fila["nivel"] = None
+    if fila.get("elementos") == "":
+        fila["elementos"] = None
+    if fila.get("elementos_requeridos") == "":
+        fila["elementos_requeridos"] = []
     return fila
 
 
@@ -125,18 +151,11 @@ def _a_minutos(hora: str) -> int:
     return int(horas) * 60 + int(minutos)
 
 
-def _verificar_grilla(hora_inicio: str, hora_fin: str) -> None:
-    """Revisa que el bloque caiga en la grilla operativa y en bloques completos."""
+def _verificar_bloques(hora_inicio: str, hora_fin: str) -> None:
+    """Revisa que las horas caigan en bloques completos. No hay horario de apertura: la operación es 24/7."""
     for hora in (hora_inicio, hora_fin):
         if _a_minutos(hora) % config.MINUTOS_BLOQUE:
             raise ErrorFila(f"la hora {hora} no cae en bloques de {config.MINUTOS_BLOQUE} minutos")
-    apertura = config.GRILLA_APERTURA_HORA * 60
-    cierre = config.GRILLA_CIERRE_HORA * 60
-    if _a_minutos(hora_inicio) < apertura or _a_minutos(hora_fin) > cierre:
-        raise ErrorFila(
-            f"el horario {hora_inicio}-{hora_fin} está fuera de la grilla "
-            f"({config.GRILLA_APERTURA_HORA:02d}:00 a {config.GRILLA_CIERRE_HORA:02d}:00)"
-        )
 
 
 def _validar_espacio(datos: dict) -> Espacio:
@@ -147,7 +166,7 @@ def _validar_sesion(datos: dict, ids_espacios: set) -> Sesion:
     sesion = Sesion(**datos)
     if sesion.espacio_id not in ids_espacios:
         raise ErrorFila(f"el espacio '{sesion.espacio_id}' no existe en {ARCHIVO_ESPACIOS}")
-    _verificar_grilla(sesion.hora_inicio, sesion.hora_fin)
+    _verificar_bloques(sesion.hora_inicio, sesion.hora_fin)
     return sesion
 
 
@@ -160,21 +179,27 @@ def _validar_cohorte(datos: dict, ids_espacios: set) -> Cohorte:
 
 # --- Lectura y procesamiento de archivos ----------------------------------------
 
-def _leer_filas(archivo: str) -> tuple[list, Optional[str]]:
-    """Devuelve (número_de_línea, datos) de cada fila, o un mensaje si el archivo no se puede leer."""
+def _leer_filas(archivo: str) -> list:
+    """Devuelve (número_de_línea, datos) de cada fila. Lanza ErrorImportacion si el archivo no sirve."""
     ruta = Path(config.RUTA_DATOS) / archivo
     if not ruta.exists():
-        return [], f"no se encontró el archivo {archivo} en {config.RUTA_DATOS}"
+        raise ErrorImportacion("archivo_ausente", archivo, f"no se encontró {archivo}")
     try:
         with open(ruta, newline="", encoding="utf-8-sig") as archivo_abierto:
             lector = csv.DictReader(archivo_abierto)
-            filas = [
+            columnas = [c.strip() for c in (lector.fieldnames or [])]
+            faltantes = [c for c in COLUMNAS_REQUERIDAS[archivo] if c not in columnas]
+            if faltantes:
+                raise ErrorImportacion("estructura_incompatible", archivo,
+                                       f"faltan columnas en {archivo}: {', '.join(faltantes)}")
+            return [
                 (numero + 2, {k.strip(): (v or "").strip() for k, v in fila.items() if k})
                 for numero, fila in enumerate(lector)
             ]
-        return filas, None
     except (OSError, csv.Error, UnicodeDecodeError) as error:
-        return [], f"no se pudo leer {archivo}: {error}"
+        logger.warning("No se pudo leer %s: %s", archivo, error)
+        raise ErrorImportacion("archivo_no_legible", archivo,
+                               f"no se pudo leer {archivo}; guárdelo con codificación UTF-8") from error
 
 
 def _rechazo(archivo: str, fila: int, datos: dict, motivo: str) -> dict:
@@ -209,6 +234,7 @@ def _procesar(archivo, filas, validar: Callable, clave: Callable, catalogos: dic
 def _insertar_validos(con, tabla: str, archivo: str, validos: list) -> None:
     for item in validos:
         datos = {k: (v.isoformat() if isinstance(v, date) else v) for k, v in item["modelo"].model_dump().items()}
+        datos = {k: json.dumps(v, ensure_ascii=False) if isinstance(v, list) else v for k, v in datos.items()}
         datos["archivo_origen"] = archivo
         datos["fila_origen"] = item["fila"]
         columnas = ", ".join(datos)
@@ -231,20 +257,10 @@ def _guardar_auxiliares(con, archivo: str, rechazos: list, validos: list) -> Non
             )
 
 
-def _cargar_tabla(con, tabla, archivo, validar, clave, resumen) -> list:
-    """Carga un archivo completo. Devuelve los registros válidos (lista vacía si el archivo falla)."""
-    filas, error_lectura = _leer_filas(archivo)
-    if error_lectura:
-        con.execute("INSERT INTO errores_carga (archivo, mensaje) VALUES (?, ?)", (archivo, error_lectura))
-        resumen["errores"].append(error_lectura)
-        return []
-    validos, rechazos = _procesar(archivo, filas, validar, clave, CATALOGOS[archivo])
-    _insertar_validos(con, tabla, archivo, validos)
-    _guardar_auxiliares(con, archivo, rechazos, validos)
-    resumen["cargados"][archivo] = len(validos)
-    resumen["rechazados"][archivo] = len(rechazos)
-    resumen["corregidos"][archivo] = sum(len(i["correcciones"]) for i in validos)
-    return validos
+def _validar_archivo(archivo: str, validar: Callable, clave: Callable) -> dict:
+    """Lee y valida un archivo en memoria. No escribe nada en la base."""
+    validos, rechazos = _procesar(archivo, _leer_filas(archivo), validar, clave, CATALOGOS[archivo])
+    return {"validos": validos, "rechazos": rechazos}
 
 
 # --- Conflictos -----------------------------------------------------------------
@@ -319,24 +335,142 @@ def _detectar_conflictos(con) -> int:
 
 # --- Punto de entrada -----------------------------------------------------------
 
-def cargar_datos() -> dict:
-    """Recarga todos los datos. Nunca lanza excepciones: los fallos quedan en el resumen."""
-    resumen = {"cargados": {}, "rechazados": {}, "corregidos": {}, "conflictos": 0, "errores": []}
+TABLAS_POR_ARCHIVO = ((ARCHIVO_ESPACIOS, "espacios"), (ARCHIVO_SESIONES, "sesiones"), (ARCHIVO_COHORTES, "cohortes"))
+
+
+def _validar_todo() -> dict:
+    """Valida los tres archivos antes de tocar la base. Un archivo obligatorio roto detiene todo."""
+    espacios = _validar_archivo(ARCHIVO_ESPACIOS, _validar_espacio, lambda m: m.id)
+    if not espacios["validos"]:
+        # Sin espacios, las sesiones y cohortes no tendrían a qué referirse.
+        raise ErrorImportacion("catalogo_vacio", ARCHIVO_ESPACIOS,
+                               f"{ARCHIVO_ESPACIOS} no tiene ningún espacio válido")
+    ids_espacios = {item["modelo"].id for item in espacios["validos"]}
+    return {
+        ARCHIVO_ESPACIOS: espacios,
+        ARCHIVO_SESIONES: _validar_archivo(ARCHIVO_SESIONES,
+                                           lambda d: _validar_sesion(d, ids_espacios), lambda m: m.id),
+        ARCHIVO_COHORTES: _validar_archivo(ARCHIVO_COHORTES,
+                                           lambda d: _validar_cohorte(d, ids_espacios), lambda m: m.codigo),
+    }
+
+
+def _escribir(con, validados: dict) -> int:
+    """Reemplaza los datos dentro de la transacción recibida. Devuelve el número de conflictos."""
+    db.vaciar_tablas(con)
+    for archivo, tabla in TABLAS_POR_ARCHIVO:
+        _insertar_validos(con, tabla, archivo, validados[archivo]["validos"])
+        _guardar_auxiliares(con, archivo, validados[archivo]["rechazos"], validados[archivo]["validos"])
+    return _detectar_conflictos(con)
+
+
+def _resumen(validados: dict, conflictos: int) -> dict:
+    return {
+        "ok": True,
+        "error": None,
+        "cargados": {a: len(v["validos"]) for a, v in validados.items()},
+        "rechazados": {a: len(v["rechazos"]) for a, v in validados.items()},
+        "corregidos": {a: sum(len(i["correcciones"]) for i in v["validos"]) for a, v in validados.items()},
+        "conflictos": conflictos,
+    }
+
+
+def _verificar_reservas_aprobadas(con) -> None:
+    """Rechaza la importación si una reserva aprobada no encaja con los datos entrantes.
+
+    Corre dentro de la transacción: si lanza ErrorImportacion, el reemplazo completo se revierte.
+    No cancela ni mueve reservas: solo informa.
+    """
+    reservas = con.execute(
+        "SELECT id, espacio_id, inicio, fin, personas, elementos_requeridos FROM solicitudes WHERE estado = 'aprobada' ORDER BY id"
+    ).fetchall()
+    for reserva in reservas:
+        espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (reserva["espacio_id"],)).fetchone()
+        motivo = archivo = None
+        if espacio is None:
+            motivo, archivo = "ya no tiene espacio en espacios.csv", ARCHIVO_ESPACIOS
+        elif espacio["estado"] != "activo":
+            motivo, archivo = "su espacio no está activo en espacios.csv", ARCHIVO_ESPACIOS
+        elif reserva["personas"] > espacio["aforo"]:
+            motivo, archivo = f"supera el aforo de {espacio['aforo']} que tendría el espacio en espacios.csv", ARCHIVO_ESPACIOS
+        elif not solicitudes.elementos_compatibles(dict(espacio), json.loads(reserva["elementos_requeridos"])):
+            motivo, archivo = "no tiene sus elementos requeridos verificados", ARCHIVO_ESPACIOS
+        else:
+            cruces = [c for c in solicitudes.buscar_conflictos(
+                con, reserva["espacio_id"], reserva["inicio"], reserva["fin"], excluir_id=reserva["id"])
+                if c["tipo"] == "sesion"]
+            if cruces:
+                motivo = f"se cruza con la sesión {cruces[0]['referencia']} de sesiones.csv"
+                archivo = ARCHIVO_SESIONES
+        if motivo:
+            raise ErrorImportacion(
+                "reserva_incompatible", archivo,
+                f"La importación se canceló: la reserva {reserva['id']} aprobada {motivo}. "
+                "La carga anterior se conserva. El sistema no cancela ni mueve reservas; "
+                "resuelva la incompatibilidad antes de importar.",
+            )
+
+
+def _importar() -> dict:
+    """Importa los CSV reemplazando la carga anterior, solo si todos los archivos obligatorios sirven.
+
+    Si algo falla, la base queda exactamente como estaba. Nunca lanza excepciones.
+    """
+    try:
+        validados = _validar_todo()
+    except ErrorImportacion as error:
+        return {"ok": False, "error": error.a_dict()}
+    except Exception:  # un fallo inesperado no debe tumbar la aplicación
+        logger.exception("Error inesperado al validar la importación")
+        return {"ok": False, "error": ErrorImportacion(
+            "error_interno", None, "Error inesperado al validar los datos").a_dict()}
     try:
         with db.transaccion() as con:
-            db.vaciar_tablas(con)
-            espacios = _cargar_tabla(con, "espacios", ARCHIVO_ESPACIOS,
-                                     lambda d: _validar_espacio(d), lambda m: m.id, resumen)
-            ids_espacios = {item["modelo"].id for item in espacios}
-            _cargar_tabla(con, "sesiones", ARCHIVO_SESIONES,
-                          lambda d: _validar_sesion(d, ids_espacios), lambda m: m.id, resumen)
-            _cargar_tabla(con, "cohortes", ARCHIVO_COHORTES,
-                          lambda d: _validar_cohorte(d, ids_espacios), lambda m: m.codigo, resumen)
-            resumen["conflictos"] = _detectar_conflictos(con)
-    except Exception as error:  # red de seguridad: la carga nunca tumba la aplicación
-        logger.exception("Error inesperado durante la carga de datos")
-        resumen["errores"].append(f"Error inesperado durante la carga: {error}")
-    return resumen
+            conflictos = _escribir(con, validados)
+            _verificar_reservas_aprobadas(con)
+    except ErrorImportacion as error:  # la transacción ya revirtió el reemplazo
+        return {"ok": False, "error": error.a_dict()}
+    except Exception as error:  # la transacción ya revirtió el reemplazo
+        logger.exception("Error al escribir la importación: %s", error)
+        return {"ok": False, "error": ErrorImportacion("error_escritura", None,
+                                                    "No se pudo guardar la importación").a_dict()}
+    return _resumen(validados, conflictos)
+
+
+def cargar_datos() -> dict:
+    """Importa los CSV y registra el intento. Nunca lanza excepciones."""
+    resultado = _importar()
+    _registrar_importacion(resultado)
+    return resultado
+
+
+def _registrar_importacion(resultado: dict) -> None:
+    """Guarda el intento en su propia transacción, para que sobreviva a un reemplazo fallido."""
+    error = resultado["error"]
+    if error:
+        exito, codigo, archivo, mensaje = 0, error["codigo"], error["archivo"], error["mensaje"]
+    else:
+        exito, codigo, archivo = 1, None, None
+        detalle = ", ".join(f"{a} {n}" for a, n in resultado["cargados"].items())
+        mensaje = f"Importación correcta: {detalle}; conflictos: {resultado['conflictos']}"
+    try:
+        with db.transaccion() as con:
+            con.execute(
+                "INSERT INTO importaciones (exito, codigo, archivo, mensaje) VALUES (?, ?, ?, ?)",
+                (exito, codigo, archivo, mensaje),
+            )
+    except Exception:
+        logger.exception("No se pudo registrar el intento de importación")
+
+
+def _ultima_importacion() -> Optional[dict]:
+    filas = db.consultar(
+        "SELECT fecha_hora, exito, codigo, archivo, mensaje FROM importaciones ORDER BY id DESC LIMIT 1"
+    )
+    if not filas:
+        return None
+    filas[0]["exito"] = bool(filas[0]["exito"])
+    return filas[0]
 
 
 def consultar_calidad() -> dict:
@@ -364,7 +498,7 @@ def consultar_calidad() -> dict:
         rechazo["contenido"] = json.loads(rechazo["contenido"])
     return {
         "resumen": resumen,
-        "errores_carga": db.consultar("SELECT archivo, mensaje FROM errores_carga ORDER BY id"),
+        "ultima_importacion": _ultima_importacion(),
         "rechazados": rechazos,
         "correcciones": db.consultar(
             "SELECT archivo, fila, id_registro, campo, valor_original, valor_corregido "
@@ -372,3 +506,9 @@ def consultar_calidad() -> dict:
         "conflictos": db.consultar(
             "SELECT tipo, archivo, referencia, referencia_relacionada, descripcion FROM conflictos ORDER BY archivo, id"),
     }
+
+
+if __name__ == "__main__":
+    # Importación desde la línea de comandos: python -m app.carga_datos
+    db.inicializar_base()
+    print(json.dumps(cargar_datos(), ensure_ascii=False, indent=2))

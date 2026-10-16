@@ -1,0 +1,9 @@
+id,nombre,estado,ficticio
+DEMO-EQ-01,Portatil ficticio 1,disponible,true
+DEMO-EQ-02,Portatil ficticio 2,disponible,true
+DEMO-EQ-03,Portatil ficticio 3,disponible,true
+DEMO-EQ-04,Proyector ficticio 1,disponible,true
+DEMO-EQ-05,Proyector ficticio 2,mantenimiento,true
+DEMO-EQ-06,Camara ficticia 1,disponible,true
+DEMO-EQ-07,Camara ficticia 2,disponible,true
+DEMO-EQ-08,Portatil ficticio inhabilitado,inhabilitado,true

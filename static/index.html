@@ -8,48 +8,93 @@
 </head>
 <body>
   <header class="encabezado">
-    <h1>Sistema Central de Gestión Operativa de Campuslands</h1>
+    <div><p class="marca">CAMPUSLANDS · GESTIÓN DE ESPACIOS</p><h1>Un espacio para cada actividad</h1></div>
     <span id="estado-ia" class="insignia insignia-pendiente">IA: verificando…</span>
   </header>
-
-  <nav class="pestanas" role="tablist">
-    <button class="pestana activa" data-pestana="grilla" role="tab">Grilla</button>
-    <button class="pestana" data-pestana="espacios" role="tab">Espacios</button>
-    <button class="pestana" data-pestana="cohortes" role="tab">Cohortes</button>
-    <button class="pestana" data-pestana="calidad" role="tab">Calidad de datos</button>
+  <p id="aviso-sesion" class="aviso" role="status"></p>
+  <nav class="pestanas" role="tablist" aria-label="Secciones">
+    <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0">Calendario</button>
+    <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1">Solicitudes</button>
+    <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1">Aulas</button>
+    <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1">Incidencias y equipos</button>
+    <button id="tab-datos" class="pestana" data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
   </nav>
-
   <main>
-    <section id="grilla" class="panel activo">
-      <div class="controles">
-        <label>Fecha
-          <select id="selector-fecha"></select>
-        </label>
-        <div id="leyenda" class="leyenda"></div>
+    <section id="operaciones" class="panel" role="tabpanel" aria-labelledby="tab-operaciones" hidden>
+      <div class="titulo-seccion"><h2>Incidencias y préstamos</h2><button id="actualizar-operaciones" type="button">Consultar estado / Actualizar</button></div>
+      <p class="estado" role="status" aria-live="polite"></p>
+      <p>La IA propone una clasificación. Solo la coordinadora confirma bloqueos. Las reservas y préstamos afectados se conservan.</p>
+      <form id="form-incidencia">
+        <h3>Reportar incidencia</h3>
+        <label>Recurso <select id="recurso-incidencia" required></select></label>
+        <label>Reporte <textarea id="texto-incidencia" rows="3" minlength="5" maxlength="2000" required></textarea></label>
+        <button type="submit">Guardar y clasificar</button>
+      </form>
+      <div id="lista-incidencias"></div>
+      <h3>Inventario de equipos</h3>
+      <p>El inventario oficial está pendiente. Cada equipo de prueba debe marcarse como ficticio.</p>
+      <form id="form-equipo" hidden>
+        <label>Identificador <input id="id-equipo" maxlength="60" required></label>
+        <label>Nombre <input id="nombre-equipo" maxlength="150" required></label>
+        <label>Estado <select id="estado-equipo"><option value="disponible">Disponible</option><option value="mantenimiento">Mantenimiento</option><option value="inhabilitado">Inhabilitado</option></select></label>
+        <label><input id="ficticio-equipo" type="checkbox" checked> Equipo ficticio de desarrollo</label>
+        <button type="submit">Registrar equipo</button>
+      </form>
+      <div id="lista-equipos"></div>
+      <h3>Préstamos autorizados</h3><div id="lista-prestamos"></div>
+    </section>
+    <section id="grilla" class="panel activo" role="tabpanel" aria-labelledby="tab-grilla">
+      <div class="espacio-trabajo">
+        <div class="calendario">
+          <div class="titulo-seccion"><div><h2>Calendario de aulas</h2><p>Consulta de ocupación · 24 horas · Hora local del centro</p></div><span class="etiqueta">Solo lectura</span></div>
+          <div class="controles fechas">
+            <button id="dia-anterior" type="button" aria-label="Día anterior">← Anterior</button>
+            <button id="dia-hoy" type="button">Hoy</button>
+            <button id="dia-siguiente" type="button" aria-label="Día siguiente">Siguiente →</button>
+            <label>Fecha <input id="selector-fecha" type="date" required></label>
+          </div>
+          <div id="leyenda" class="leyenda" aria-label="Leyenda del calendario"></div>
+          <p class="estado" role="status" aria-live="polite"></p>
+          <div class="tabla-scroll calendario-scroll" tabindex="0" role="region" aria-label="Ocupación de aulas, desplazable"><table id="tabla-grilla" class="grilla" aria-label="Ocupación por aula y hora"></table></div>
+          <h3 class="subtitulo">Reservas aprobadas del día</h3>
+          <div id="reservas-aprobadas" class="tabla-scroll"></div>
+        </div>
+        <aside id="chat" class="asistente" aria-labelledby="titulo-chat">
+          <div class="titulo-seccion"><div><p class="marca">ASISTENTE DE AULAS</p><h2 id="titulo-chat">Planeemos tu solicitud</h2></div></div>
+          <p class="ayuda">Indica fecha, horario, asistentes y actividad. Revisa la propuesta antes de confirmarla.</p>
+          <div id="historial-chat" class="historial-chat" role="log" aria-label="Conversación" aria-live="polite" aria-relevant="additions"></div>
+          <p id="respuesta-chat" class="resultado" role="status"></p>
+          <div id="datos-chat"></div>
+          <button id="consultar-resultado-chat" type="button" hidden>Consultar solicitudes antes de repetir</button>
+          <form id="form-chat">
+            <label for="entrada-chat">Tu mensaje</label>
+            <textarea id="entrada-chat" rows="3" maxlength="500" required placeholder="Ej.: Una clase de SER para 8 personas, mañana de 8:00 a 10:00"></textarea>
+            <div class="pie-chat"><span class="ayuda">La confirmación crea una solicitud pendiente.</span><button id="enviar-chat" type="submit">Enviar mensaje</button></div>
+          </form>
+        </aside>
       </div>
-      <p class="estado" aria-live="polite"></p>
-      <div class="tabla-scroll"><table id="tabla-grilla" class="grilla"></table></div>
     </section>
-
-    <section id="espacios" class="panel">
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
+    <section id="solicitudes" class="panel" role="tabpanel" aria-labelledby="tab-solicitudes" hidden>
+      <div class="titulo-seccion"><div><h2>Solicitudes registradas</h2><p>Seguimiento y aprobación</p></div><button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button></div>
+      <p class="ayuda">Solo la coordinadora puede aprobar solicitudes pendientes. La identidad de desarrollo se configura en el servidor. Una solicitud comercial no acredita pago.</p>
+      <p id="resultado-solicitudes" class="resultado" role="status"></p>
+      <div id="solicitudes-registradas" class="tabla-scroll"></div>
+      <div id="reubicacion-propuesta" aria-live="polite"></div>
     </section>
-
-    <section id="cohortes" class="panel">
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
+    <section id="espacios" class="panel" role="tabpanel" aria-labelledby="tab-espacios" hidden>
+      <h2>Catálogo de aulas</h2><p class="estado" aria-live="polite"></p><div class="contenido"></div>
     </section>
-
-    <section id="calidad" class="panel">
-      <div class="controles">
-        <button id="boton-recargar" type="button">Recargar datos</button>
-      </div>
-      <p class="estado" aria-live="polite"></p>
-      <div class="contenido"></div>
+    <section id="datos" class="panel" role="tabpanel" aria-labelledby="tab-datos" hidden>
+      <h2>Datos del centro</h2><p class="estado" aria-live="polite"></p>
+      <section id="cohortes" class="bloque-datos" aria-labelledby="titulo-cohortes"><h3 id="titulo-cohortes">Cohortes</h3><p class="estado" aria-live="polite"></p><div class="contenido tabla-scroll"></div></section>
+      <section id="calidad" class="bloque-datos" aria-labelledby="titulo-calidad">
+        <div class="titulo-seccion"><h3 id="titulo-calidad">Calidad de datos</h3><button id="boton-recargar" type="button">Recargar datos</button></div>
+        <p id="resultado-importacion" class="resultado" role="status"></p><p class="estado" aria-live="polite"></p><div class="contenido tabla-scroll"></div>
+      </section>
     </section>
   </main>
-
+  <footer>Entorno de desarrollo · Datos ficticios · Las reservas requieren aprobación de la coordinadora.</footer>
   <script src="/app.js"></script>
+  <script src="/operaciones.js"></script>
 </body>
 </html>

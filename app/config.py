@@ -25,10 +25,11 @@ def _entero(nombre: str, defecto: int) -> int:
 RUTA_BASE_DATOS = _texto("RUTA_BASE_DATOS", str(RAIZ_PROYECTO / "gestion_salas.db"))
 RUTA_DATOS = _texto("RUTA_DATOS", str(RAIZ_PROYECTO / "data" / "ficticio"))
 
-# Grilla operativa: horas enteras y bloques de minutos
-GRILLA_APERTURA_HORA = _entero("GRILLA_APERTURA_HORA", 6)
-GRILLA_CIERRE_HORA = _entero("GRILLA_CIERRE_HORA", 18)
+# Bloques de tiempo: las horas de las sesiones deben caer en múltiplos de estos minutos (operación 24/7)
 MINUTOS_BLOQUE = _entero("MINUTOS_BLOQUE", 15)
+MINUTOS_DEVOLUCION_ANTICIPADA = _entero("MINUTOS_DEVOLUCION_ANTICIPADA", 5)
+PORCENTAJE_AFORO_MAXIMO = _entero("PORCENTAJE_AFORO_MAXIMO", 100)
+AULA_PREFERIDA_ZONA_FRANCA = _texto("AULA_PREFERIDA_ZONA_FRANCA", "Sala Azul")
 
 # Cliente de IA: IA_PROVEEDOR = "ollama" o "openai" (API compatible con OpenAI)
 IA_PROVEEDOR = _texto("IA_PROVEEDOR")
@@ -36,5 +37,9 @@ IA_URL = _texto("IA_URL")
 IA_MODELO = _texto("IA_MODELO")
 IA_API_KEY = _texto("IA_API_KEY")
 IA_TIMEOUT_SEGUNDOS = _entero("IA_TIMEOUT_SEGUNDOS", 20)
+
+# Identidad de desarrollo: NO es autenticación. Ver app/identidad.py.
+USUARIO_DESARROLLO = _texto("USUARIO_DESARROLLO")
+ROL_DESARROLLO = _texto("ROL_DESARROLLO")
 
 # Umbrales de reglas de negocio: se definirán en la fase 2, junto con app/reglas.py.
