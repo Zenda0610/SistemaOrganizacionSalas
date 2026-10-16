@@ -4,21 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gestión Operativa Campuslands</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="encabezado">
-    <div><p class="marca">CAMPUSLANDS · GESTIÓN DE ESPACIOS</p><h1>Un espacio para cada actividad</h1></div>
-    <span id="estado-ia" class="insignia insignia-pendiente">IA: verificando…</span>
+    <div class="marca-portal"><span class="logo-texto">campus</span><h1>Gestión de salas</h1></div>
+    <div class="perfil">
+      <span id="estado-ia" class="insignia insignia-pendiente">IA: verificando…</span>
+      <span id="rol-activo" class="rol-activo"></span>
+      <span id="avatar" class="avatar" aria-hidden="true">·</span>
+    </div>
   </header>
-  <p id="aviso-sesion" class="aviso" role="status"></p>
-  <nav class="pestanas" role="tablist" aria-label="Secciones">
-    <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0">Calendario</button>
-    <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1">Solicitudes</button>
-    <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1">Aulas</button>
-    <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1">Incidencias y equipos</button>
-    <button id="tab-datos" class="pestana" hidden data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
+  <nav class="pestanas" role="tablist" aria-label="Secciones" aria-orientation="vertical">
+    <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendario</button>
+    <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>Solicitudes</button>
+    <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5l8-3 8 3v16"/><path d="M9 21v-6h6v6"/></svg>Aulas</button>
+    <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg>Incidencias y equipos</button>
+    <button id="tab-datos" class="pestana" hidden data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Datos</button>
   </nav>
+  <div class="area-principal">
+  <p id="saludo" class="saludo">Hola</p>
+  <p id="aviso-sesion" class="aviso" role="status"></p>
   <main>
     <section id="operaciones" class="panel" role="tabpanel" aria-labelledby="tab-operaciones" hidden>
       <div class="titulo-seccion"><h2>Incidencias y préstamos</h2><button id="actualizar-operaciones" type="button">Consultar estado / Actualizar</button></div>
@@ -108,6 +117,7 @@
     </section>
   </main>
   <footer>Entorno de desarrollo · Datos ficticios · Las reservas requieren aprobación de la coordinadora.</footer>
+  </div>
   <script src="/app.js"></script>
   <script src="/operaciones.js"></script>
   <script src="/coordinacion.js"></script>

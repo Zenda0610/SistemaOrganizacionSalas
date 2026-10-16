@@ -455,6 +455,9 @@ async function cargarSesion() {
   try {
     const sesion = await pedir("/sesion");
     aviso.textContent = `USUARIO DE DESARROLLO: ${sesion.usuario_id} (rol ${sesion.rol}). No es autenticación.`;
+    document.getElementById("saludo").textContent = `Hola, ${sesion.usuario_id}`;
+    document.getElementById("rol-activo").textContent = sesion.rol;
+    document.getElementById("avatar").textContent = sesion.usuario_id.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
     // Solo oculta la pestaña; el servidor responde 403 a /cohortes y /calidad-datos para otros roles.
     document.getElementById("tab-datos").hidden = sesion.rol !== "coordinadora";
   } catch (error) {
@@ -797,13 +800,13 @@ document.getElementById("form-chat").addEventListener("submit", enviarChat);
 document.querySelectorAll(".pestana").forEach((boton) => {
   boton.addEventListener("click", () => activarPestana(boton.dataset.pestana));
   boton.addEventListener("keydown", (evento) => {
-    const teclas = ["ArrowRight", "ArrowLeft", "Home", "End"];
+    const teclas = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"];
     if (!teclas.includes(evento.key)) return;
     evento.preventDefault();
     const botones = [...document.querySelectorAll(".pestana")].filter((b) => !b.hidden);
     const actual = botones.indexOf(boton);
     const indice = evento.key === "Home" ? 0 : evento.key === "End" ? botones.length - 1
-      : (actual + (evento.key === "ArrowRight" ? 1 : -1) + botones.length) % botones.length;
+      : (actual + (["ArrowRight", "ArrowDown"].includes(evento.key) ? 1 : -1) + botones.length) % botones.length;
     botones[indice].focus();
     activarPestana(botones[indice].dataset.pestana);
   });
