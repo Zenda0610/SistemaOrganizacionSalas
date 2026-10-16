@@ -495,7 +495,7 @@ async function cargarSolicitudes() {
       { titulo: "Personas", valor: (f) => f.personas },
       { titulo: "Solicitante", valor: (f) => f.solicitante_id || "No disponible" },
       { titulo: "Motivo", valor: (f) => f.descripcion },
-      { titulo: "Estado", valor: (f) => f.estado },
+      { titulo: "Estado", valor: (f) => f.estado, clase: (f) => `celda-${f.estado}` },
       { titulo: "Condición", valor: (f) => f.tipo === "comercial"
         ? `Comercial · Pago ${f.estado_pago || "pendiente"} (no verificado por el sistema)` : "Académica" },
     ], filas);
