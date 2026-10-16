@@ -24,8 +24,17 @@ from app.permisos import tipo_solicitud_para
 FORMATO = "%Y-%m-%d %H:%M"
 CAMPOS_SOLICITUD = (
     "id, espacio_id, inicio, fin, personas, descripcion, tipo, solicitante_id, rol_solicitante, "
-    "estado, requiere_pago, estado_pago, creada_en, decidida_por, decidida_en, actividad, elementos_requeridos"
+    "estado, requiere_pago, estado_pago, creada_en, decidida_por, decidida_en, actividad, elementos_requeridos, "
+    "tarifa_hora_cotizada"
 )
+# Tarifa efectiva: la editada por la coordinadora (tarifas_aula, NULL = quitada) o, si no hay, la del CSV.
+SQL_TARIFA_EFECTIVA = "CASE WHEN t.espacio_id IS NOT NULL THEN t.tarifa_hora ELSE e.tarifa_hora END"
+
+
+def tarifa_efectiva(con, espacio_id: str):
+    fila = con.execute(f"SELECT {SQL_TARIFA_EFECTIVA} AS tarifa FROM espacios e LEFT JOIN tarifas_aula t "
+                       "ON t.espacio_id = e.id WHERE e.id = ?", (espacio_id,)).fetchone()
+    return fila["tarifa"] if fila else None
 
 
 class ErrorSolicitud(Exception):
@@ -134,8 +143,8 @@ def _enriquecer(con, fila: dict) -> dict:
         fila["actividad"] = reglas.actividad_desde_texto(fila["descripcion"])
     fila["prioridad"] = reglas.prioridad(fila)
     if fila["tipo"] == "comercial":
-        espacio = con.execute("SELECT tarifa_hora FROM espacios WHERE id = ?", (fila["espacio_id"],)).fetchone()
-        fila["costo"] = reglas.costo(espacio["tarifa_hora"] if espacio else None, fila["inicio"], fila["fin"])
+        # Cotización congelada al crear: un cambio de tarifa posterior no la altera.
+        fila["costo"] = reglas.costo(fila["tarifa_hora_cotizada"], fila["inicio"], fila["fin"])
         if fila["estado"] == "pendiente" and academicas_prioritarias(con, fila["espacio_id"], fila["inicio"], fila["fin"], "aprobada"):
             fila["bloqueo"] = "Una actividad académica aprobada ocupa esta franja; no se puede aprobar."
     return fila
@@ -180,11 +189,12 @@ def crear_en(con, identidad: Identidad, datos: NuevaSolicitud) -> int:
     actividad = datos.actividad if datos.actividad != "otra" else reglas.actividad_desde_texto(datos.descripcion)
     cursor = con.execute(
         "INSERT INTO solicitudes (espacio_id, inicio, fin, personas, descripcion, tipo, solicitante_id, "
-        "rol_solicitante, estado, requiere_pago, estado_pago, actividad, elementos_requeridos) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?)",
+        "rol_solicitante, estado, requiere_pago, estado_pago, actividad, elementos_requeridos, tarifa_hora_cotizada) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?)",
         (datos.espacio_id, _texto(datos.inicio), _texto(datos.fin), datos.personas, datos.descripcion, tipo,
          identidad.usuario_id, identidad.rol, int(comercial), "pendiente" if comercial else None,
-         "comercial" if comercial else actividad, json.dumps(datos.elementos_requeridos, ensure_ascii=False)),
+         "comercial" if comercial else actividad, json.dumps(datos.elementos_requeridos, ensure_ascii=False),
+         tarifa_efectiva(con, datos.espacio_id) if comercial else None),
     )
     return cursor.lastrowid
 
@@ -277,7 +287,8 @@ def espacios_disponibles(inicio: datetime, fin: datetime, personas: Optional[int
                   and not (comercial and academicas_prioritarias(con, espacio["id"], inicio_txt, fin_txt, "pendiente"))]
         if comercial:
             for espacio in libres:
-                espacio["costo"] = reglas.costo(espacio.get("tarifa_hora"), inicio_txt, fin_txt)
+                espacio["tarifa_hora"] = tarifa_efectiva(con, espacio["id"])
+                espacio["costo"] = reglas.costo(espacio["tarifa_hora"], inicio_txt, fin_txt)
         return libres
     finally:
         con.close()

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app import db, ia
 from app.operaciones import afectados
-from app.solicitudes import comerciales_aprobadas
+from app.solicitudes import SQL_TARIFA_EFECTIVA, comerciales_aprobadas
 
 IMPORTANTE, NECESARIA = 'importante', 'necesaria'
 PRIORIDADES_ALTAS = ('alta', 'critica')
@@ -82,6 +82,16 @@ def resumen(ahora: datetime | None = None) -> dict:
                 'tipo': 'prestamo_sin_devolver', 'nivel': NECESARIA,
                 'titulo': f"Préstamo #{p['id']} de {p['equipo_id']} a {p['responsable']} sin devolver desde {p['fecha']}",
                 'datos': p})
+
+        sin_tarifa = [dict(f) for f in con.execute(
+            f"SELECT e.id, e.nombre FROM espacios e LEFT JOIN tarifas_aula t ON t.espacio_id = e.id "
+            f"WHERE e.estado = 'activo' AND {SQL_TARIFA_EFECTIVA} IS NULL ORDER BY e.id")]
+        if sin_tarifa:
+            notificaciones.append({
+                'tipo': 'aulas_sin_tarifa', 'nivel': NECESARIA,
+                'titulo': f"{len(sin_tarifa)} aula(s) sin tarifa por hora para alquiler comercial: "
+                          + ', '.join(a['nombre'] for a in sin_tarifa),
+                'datos': {'aulas': sin_tarifa}})
 
         for c in con.execute('SELECT tipo, archivo, referencia, referencia_relacionada, descripcion FROM conflictos ORDER BY id'):
             c = dict(c)

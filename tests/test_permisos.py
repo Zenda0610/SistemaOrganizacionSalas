@@ -22,6 +22,7 @@ ESPERADO = {
     "prestar_equipo": {"profesor", "administrativo", "coordinadora"},
     "ver_notificaciones": {"coordinadora"},
     "ver_datos": {"coordinadora"},
+    "gestionar_tarifas": {"coordinadora"},
 }
 
 

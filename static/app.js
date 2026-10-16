@@ -294,22 +294,82 @@ function pintarLeyenda() {
 
 // --- Espacios -------------------------------------------------------------------
 
+function textoTarifaAula(tarifa) {
+  return tarifa === null || tarifa === undefined ? "Por definir" : `$${Math.round(tarifa).toLocaleString("es-CO")} COP`;
+}
+
 async function cargarEspacios() {
   mostrarEstado("espacios", "cargando", "Cargando espacios…");
-  const espacios = await pedir("/espacios");
+  const [espacios, sesion] = await Promise.all([pedir("/espacios"), pedir("/sesion").catch(() => ({}))]);
   if (!espacios.length) {
     pintarContenido("espacios", crearElemento("div"));
     mostrarEstado("espacios", "vacio", "No hay espacios cargados.");
     return;
   }
-  pintarContenido("espacios", crearTabla([
+  const tabla = crearTabla([
     { titulo: "ID", valor: (e) => e.id },
     { titulo: "Nombre", valor: (e) => e.nombre },
     { titulo: "Tipo", valor: (e) => e.tipo },
     { titulo: "Aforo", valor: (e) => e.aforo },
     { titulo: "Estado", valor: (e) => e.estado },
-  ], espacios));
+    { titulo: "Tarifa por hora", valor: (e) => textoTarifaAula(e.tarifa_hora) },
+  ], espacios);
+  // Solo la coordinadora edita; el servidor vuelve a verificar el permiso gestionar_tarifas.
+  if (sesion.rol === "coordinadora") {
+    tabla.querySelector("thead").querySelector("tr").appendChild(crearElemento("th", "", "Acción"));
+    const filas = tabla.querySelector("tbody").children;
+    espacios.forEach((espacio, indice) => {
+      const celda = crearElemento("td");
+      const boton = crearElemento("button", "", "Editar tarifa");
+      boton.type = "button";
+      boton.addEventListener("click", () => editarTarifa(espacio, filas[indice].children[5], celda));
+      celda.appendChild(boton);
+      filas[indice].appendChild(celda);
+    });
+  }
+  pintarContenido("espacios", tabla);
   mostrarEstado("espacios", "ok", "");
+}
+
+function editarTarifa(espacio, celdaTarifa, celdaAccion) {
+  const entrada = crearElemento("input");
+  entrada.type = "number";
+  entrada.min = "0";
+  entrada.step = "1000";
+  entrada.inputMode = "numeric";
+  entrada.placeholder = "Vacío = Por definir";
+  entrada.setAttribute("aria-label", `Tarifa por hora en COP de ${espacio.nombre}`);
+  entrada.value = espacio.tarifa_hora ?? "";
+  const guardar = crearElemento("button", "", "Guardar");
+  guardar.type = "button";
+  const cancelar = crearElemento("button", "", "Cancelar");
+  cancelar.type = "button";
+  celdaTarifa.replaceChildren(entrada);
+  celdaAccion.replaceChildren(guardar, cancelar);
+  entrada.focus();
+  cancelar.addEventListener("click", () => cargarEspacios().catch((e) => mostrarEstado("espacios", "error", e.message)));
+  guardar.addEventListener("click", async () => {
+    const texto = String(entrada.value).trim();
+    const valor = texto === "" ? null : Number(texto);
+    if (valor !== null && (!Number.isFinite(valor) || valor < 0)) {
+      mostrarEstado("espacios", "error", "Escribe un número mayor o igual a 0, o deja el campo vacío.");
+      return;
+    }
+    guardar.disabled = true;
+    cancelar.disabled = true;
+    mostrarEstado("espacios", "cargando", "Guardando tarifa…");
+    try {
+      const resultado = await pedir(`/espacios/${encodeURIComponent(espacio.id)}/tarifa`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tarifa_hora: valor }),
+      });
+      await cargarEspacios();
+      mostrarEstado("espacios", "ok", `Tarifa de ${espacio.nombre}: ${textoTarifaAula(resultado.tarifa_hora)}. Las cotizaciones ya creadas no cambian.`);
+    } catch (error) {
+      mostrarEstado("espacios", "error", `No se guardó la tarifa. ${error.message}`);
+      guardar.disabled = false;
+      cancelar.disabled = false;
+    }
+  });
 }
 
 // --- Cohortes -------------------------------------------------------------------

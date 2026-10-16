@@ -6,14 +6,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
-from app import carga_datos, coordinacion, db, ia, reubicaciones, operaciones
+from app import carga_datos, coordinacion, db, ia, reubicaciones, operaciones, tarifas
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
@@ -94,9 +94,10 @@ def sesion_actual() -> dict:
 @app.get("/api/espacios")
 def listar_espacios() -> list[dict]:
     filas = db.consultar(
-        "SELECT id, nombre, tipo, aforo, estado, elementos, tarifa_hora, archivo_origen, fila_origen, "
-        "EXISTS(SELECT 1 FROM bloqueos b WHERE b.recurso_tipo='aula' AND b.recurso_id=espacios.id) AS bloqueada "
-        "FROM espacios ORDER BY id"
+        "SELECT e.id, e.nombre, e.tipo, e.aforo, e.estado, e.elementos, "
+        f"{solicitudes.SQL_TARIFA_EFECTIVA} AS tarifa_hora, e.archivo_origen, e.fila_origen, "
+        "EXISTS(SELECT 1 FROM bloqueos b WHERE b.recurso_tipo='aula' AND b.recurso_id=e.id) AS bloqueada "
+        "FROM espacios e LEFT JOIN tarifas_aula t ON t.espacio_id = e.id ORDER BY e.id"
     )
     for fila in filas:
         fila["elementos"] = json.loads(fila["elementos"]) if fila["elementos"] is not None else None
@@ -104,6 +105,11 @@ def listar_espacios() -> list[dict]:
         if fila["bloqueada"]:
             fila["estado"] = "inhabilitado"
     return filas
+
+
+@app.put("/api/espacios/{espacio_id}/tarifa")
+def editar_tarifa(espacio_id: str, cuerpo=Body(...), identidad: Identidad = requerir_permiso("gestionar_tarifas")) -> dict:
+    return tarifas.actualizar(espacio_id, cuerpo, identidad)
 
 
 @app.get("/api/sesiones")

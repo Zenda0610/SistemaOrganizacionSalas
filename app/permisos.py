@@ -15,6 +15,7 @@ PERMISOS = {
     "prestar_equipo": frozenset({"profesor", "administrativo", "coordinadora"}),
     "ver_notificaciones": frozenset({"coordinadora"}),
     "ver_datos": frozenset({"coordinadora"}),
+    "gestionar_tarifas": frozenset({"coordinadora"}),
 }
 
 

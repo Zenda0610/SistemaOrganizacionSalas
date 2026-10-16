@@ -136,6 +136,21 @@ CREATE TABLE IF NOT EXISTS borradores_chat (
     actualizado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     UNIQUE (usuario_id, conversacion_id)
 );
+-- Tarifas editadas por la coordinadora: la recarga de CSV no toca estas tablas.
+CREATE TABLE IF NOT EXISTS tarifas_aula (
+    espacio_id TEXT PRIMARY KEY,
+    tarifa_hora REAL CHECK (tarifa_hora IS NULL OR tarifa_hora >= 0),
+    actualizado_por TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE TABLE IF NOT EXISTS historial_tarifas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    espacio_id TEXT NOT NULL,
+    valor_anterior REAL,
+    valor_nuevo REAL,
+    cambiado_por TEXT NOT NULL,
+    cambiado_en TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
 CREATE TABLE IF NOT EXISTS importaciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha_hora TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -183,7 +198,8 @@ def inicializar_base() -> None:
             "espacios": {"elementos": "TEXT", "tarifa_hora": "REAL"},
             "sesiones": {"elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
             "solicitudes": {"actividad": "TEXT NOT NULL DEFAULT 'otra'",
-                            "elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'"},
+                            "elementos_requeridos": "TEXT NOT NULL DEFAULT '[]'",
+                            "tarifa_hora_cotizada": "REAL"},
         }
         for tabla, columnas in ampliaciones.items():
             existentes = {fila[1] for fila in con.execute(f"PRAGMA table_info({tabla})")}
