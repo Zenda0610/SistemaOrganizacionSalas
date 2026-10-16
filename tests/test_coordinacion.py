@@ -34,6 +34,7 @@ class PruebasCoordinacion(BasePrueba):
 
             self.proxima = solicitud(ahora + timedelta(hours=3))
             self.lejana = solicitud(ahora + timedelta(days=5))
+            self.vencida = solicitud(ahora - timedelta(hours=1))
             solicitud(ahora + timedelta(days=1, hours=1), estado='aprobada', espacio='E03')
             self.critica = incidencia('critica', 'pendiente_revision')
             self.baja = incidencia('baja', 'pendiente_revision')
@@ -74,6 +75,7 @@ class PruebasCoordinacion(BasePrueba):
         niveles = {(n['tipo'], n['datos'].get('id', n['datos'].get('recurso_id'))): n['nivel'] for n in datos['notificaciones']}
         self.assertEqual(niveles[('solicitud_pendiente', self.proxima)], 'importante')
         self.assertEqual(niveles[('solicitud_pendiente', self.lejana)], 'necesaria')
+        self.assertEqual(niveles[('solicitud_pendiente', self.vencida)], 'importante')
         self.assertEqual(niveles[('incidencia', self.critica)], 'importante')
         self.assertEqual(niveles[('incidencia', self.baja)], 'necesaria')
         self.assertEqual(niveles[('incidencia', self.sin_clasificar)], 'necesaria')
@@ -83,8 +85,8 @@ class PruebasCoordinacion(BasePrueba):
         self.assertTrue(any(n['tipo'] == 'conflicto_importacion' for n in datos['notificaciones']))
         orden = [n['nivel'] for n in datos['notificaciones']]
         self.assertEqual(orden, sorted(orden, key=lambda nivel: nivel != 'importante'))
-        self.assertEqual(datos['totales']['solicitudes_pendientes'], 2)
-        self.assertEqual(datos['totales']['solicitudes_proximas_24h'], 1)
+        self.assertEqual(datos['totales']['solicitudes_pendientes'], 3)
+        self.assertEqual(datos['totales']['solicitudes_proximas_24h_o_vencidas'], 2)
         self.assertEqual(datos['solicitud_mas_antigua']['id'], self.proxima)
 
     def test_bloqueo_sin_afectados_es_necesario(self):

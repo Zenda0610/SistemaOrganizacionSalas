@@ -41,11 +41,11 @@ def resumen(ahora: datetime | None = None) -> dict:
             "SELECT id, espacio_id, inicio, fin, personas, descripcion, solicitante_id, creada_en "
             "FROM solicitudes WHERE estado = 'pendiente' ORDER BY creada_en, id")]
         for s in pendientes:
-            urgente = _fmt(ahora) <= s['inicio'] < limite
+            urgente = s['inicio'] < limite  # incluye las vencidas: siguen sin decisión
             notificaciones.append({
                 'tipo': 'solicitud_pendiente', 'nivel': IMPORTANTE if urgente else NECESARIA,
                 'titulo': f"Solicitud #{s['id']} pendiente en {s['espacio_id']} ({s['inicio']} → {s['fin']})"
-                          + (' · empieza en menos de 24 h' if urgente else ''),
+                          + ((' · ya empezó' if s['inicio'] < _fmt(ahora) else ' · empieza en menos de 24 h') if urgente else ''),
                 'datos': s})
 
         for i in con.execute("SELECT id, recurso_tipo, recurso_id, descripcion, prioridad, estado, creada_en "
@@ -84,14 +84,14 @@ def resumen(ahora: datetime | None = None) -> dict:
         con.close()
 
     notificaciones.sort(key=lambda n: n['nivel'] != IMPORTANTE)  # orden estable dentro de cada nivel
-    proximas = [s for s in pendientes if _fmt(ahora) <= s['inicio'] < limite]
+    proximas = [s for s in pendientes if s['inicio'] < limite]
     return {
         'generado_en': _fmt(ahora),
         'totales': {
             'importantes': sum(n['nivel'] == IMPORTANTE for n in notificaciones),
             'necesarias': sum(n['nivel'] == NECESARIA for n in notificaciones),
             'solicitudes_pendientes': len(pendientes),
-            'solicitudes_proximas_24h': len(proximas),
+            'solicitudes_proximas_24h_o_vencidas': len(proximas),
         },
         'solicitud_mas_antigua': pendientes[0] if pendientes else None,
         'notificaciones': notificaciones,
