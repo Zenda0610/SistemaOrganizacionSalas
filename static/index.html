@@ -17,7 +17,7 @@
     <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1">Solicitudes</button>
     <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1">Aulas</button>
     <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1">Incidencias y equipos</button>
-    <button id="tab-datos" class="pestana" data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
+    <button id="tab-datos" class="pestana" hidden data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1">Datos</button>
   </nav>
   <main>
     <section id="operaciones" class="panel" role="tabpanel" aria-labelledby="tab-operaciones" hidden>
@@ -30,6 +30,7 @@
         <label>Reporte <textarea id="texto-incidencia" rows="3" minlength="5" maxlength="2000" required></textarea></label>
         <button type="submit">Guardar y clasificar</button>
       </form>
+      <h3 id="titulo-incidencias">Incidencias</h3>
       <div id="lista-incidencias"></div>
       <h3>Inventario de equipos</h3>
       <p>El inventario oficial está pendiente. Cada equipo de prueba debe marcarse como ficticio.</p>
@@ -75,7 +76,7 @@
       </div>
     </section>
     <section id="solicitudes" class="panel" role="tabpanel" aria-labelledby="tab-solicitudes" hidden>
-      <div class="titulo-seccion"><div><h2>Solicitudes registradas</h2><p>Seguimiento y aprobación</p></div><button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button></div>
+      <div class="titulo-seccion"><div><h2 id="titulo-solicitudes">Solicitudes registradas</h2><p id="subtitulo-solicitudes">Seguimiento y aprobación</p></div><button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button></div>
       <p class="ayuda">Solo la coordinadora puede aprobar solicitudes pendientes. La identidad de desarrollo se configura en el servidor. Una solicitud comercial no acredita pago.</p>
       <p id="resultado-solicitudes" class="resultado" role="status"></p>
       <div id="solicitudes-registradas" class="tabla-scroll"></div>

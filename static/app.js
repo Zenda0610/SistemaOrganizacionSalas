@@ -455,6 +455,8 @@ async function cargarSesion() {
   try {
     const sesion = await pedir("/sesion");
     aviso.textContent = `USUARIO DE DESARROLLO: ${sesion.usuario_id} (rol ${sesion.rol}). No es autenticación.`;
+    // Solo oculta la pestaña; el servidor responde 403 a /cohortes y /calidad-datos para otros roles.
+    document.getElementById("tab-datos").hidden = sesion.rol !== "coordinadora";
   } catch (error) {
     aviso.textContent = error.codigo === "sin_identidad"
       ? "Sin identidad de desarrollo configurada. Las acciones protegidas no están disponibles."
@@ -475,6 +477,10 @@ async function cargarSolicitudes() {
   try {
     const [filas, sesion, espacios] = await Promise.all([pedir("/solicitudes"), pedir("/sesion"), pedir("/espacios")]);
     if (carga !== numeroCargaSolicitudes) return;
+    const coordinadora = sesion.rol === "coordinadora";
+    document.getElementById("titulo-solicitudes").textContent = coordinadora ? "Todas las solicitudes" : "Mis solicitudes";
+    document.getElementById("subtitulo-solicitudes").textContent = coordinadora
+      ? "Solicitudes de todos los usuarios · Aprobación" : `Solo las solicitudes de ${sesion.usuario_id}`;
     const nombres = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
     nombresAulas = nombres;
     const tabla = crearTabla([
@@ -794,7 +800,7 @@ document.querySelectorAll(".pestana").forEach((boton) => {
     const teclas = ["ArrowRight", "ArrowLeft", "Home", "End"];
     if (!teclas.includes(evento.key)) return;
     evento.preventDefault();
-    const botones = [...document.querySelectorAll(".pestana")];
+    const botones = [...document.querySelectorAll(".pestana")].filter((b) => !b.hidden);
     const actual = botones.indexOf(boton);
     const indice = evento.key === "Home" ? 0 : evento.key === "End" ? botones.length - 1
       : (actual + (evento.key === "ArrowRight" ? 1 : -1) + botones.length) % botones.length;

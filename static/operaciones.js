@@ -56,6 +56,9 @@ async function cargarOperaciones() {
     if (![aulas, equipos, incidencias, prestamos].every(Array.isArray)) throw new Error('Listado no válido.');
     const coordinadora = sesion.rol === 'coordinadora';
     document.getElementById('form-equipo').hidden = !coordinadora;
+    // Quien solicita reporta y ve sus incidencias; la coordinadora revisa todas.
+    document.getElementById('form-incidencia').hidden = coordinadora;
+    document.getElementById('titulo-incidencias').textContent = coordinadora ? 'Todas las incidencias' : 'Mis incidencias';
     const selector = document.getElementById('recurso-incidencia');
     const anterior = selector.value;
     selector.replaceChildren();

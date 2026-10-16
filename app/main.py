@@ -133,7 +133,7 @@ def listar_sesiones(
     return filas
 
 
-@app.get("/api/cohortes")
+@app.get("/api/cohortes", dependencies=[requerir_permiso("ver_datos")])
 def listar_cohortes() -> list[dict]:
     resultado = []
     for fila in db.consultar("SELECT * FROM cohortes ORDER BY fecha_fin, codigo"):
@@ -200,7 +200,7 @@ def confirmar_reubicacion(identificador: str, identidad: Identidad = Depends(ide
     return reubicaciones.confirmar(identificador, identidad)
 
 
-@app.get("/api/calidad-datos")
+@app.get("/api/calidad-datos", dependencies=[requerir_permiso("ver_datos")])
 def calidad_datos() -> dict:
     return carga_datos.consultar_calidad()
 
