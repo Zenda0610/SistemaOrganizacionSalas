@@ -380,6 +380,10 @@ def _importar() -> dict:
         validados = _validar_todo()
     except ErrorImportacion as error:
         return {"ok": False, "error": error.a_dict()}
+    except Exception as error:  # un fallo inesperado no debe tumbar la aplicación
+        logger.exception("Error inesperado al validar la importación")
+        return {"ok": False, "error": ErrorImportacion(
+            "error_interno", None, f"Error inesperado al validar los datos: {error}").a_dict()}
     try:
         with db.transaccion() as con:
             conflictos = _escribir(con, validados)
@@ -459,3 +463,9 @@ def consultar_calidad() -> dict:
         "conflictos": db.consultar(
             "SELECT tipo, archivo, referencia, referencia_relacionada, descripcion FROM conflictos ORDER BY archivo, id"),
     }
+
+
+if __name__ == "__main__":
+    # Importación desde la línea de comandos: python -m app.carga_datos
+    db.inicializar_base()
+    print(json.dumps(cargar_datos(), ensure_ascii=False, indent=2))

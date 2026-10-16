@@ -107,6 +107,7 @@ CODIGOS_HTTP_IMPORTACION = {
     "archivo_no_legible": 422,
     "estructura_incompatible": 422,
     "error_escritura": 500,
+    "error_interno": 500,
 }
 
 

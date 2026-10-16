@@ -1,4 +1,6 @@
 """Una importación fallida no debe modificar la carga anterior."""
+from unittest import mock
+
 from app import carga_datos, db
 from tests.base_prueba import BasePrueba
 
@@ -58,6 +60,14 @@ class PruebasValidacionAntesDeReemplazar(BasePrueba):
         motivos = db.consultar("SELECT motivo FROM registros_rechazados WHERE archivo = 'sesiones.csv' AND fila = 42")
         self.assertEqual(len(motivos), 1)
         self.assertIn("hora fin", motivos[0]["motivo"])
+
+    def test_error_inesperado_de_validacion_no_se_propaga(self):
+        with mock.patch.object(carga_datos, "_validar_todo", side_effect=RuntimeError("fallo inesperado")):
+            resultado = carga_datos.cargar_datos()
+
+        self.assertFalse(resultado["ok"])
+        self.assertEqual(resultado["error"]["codigo"], "error_interno")
+        self.afirmar_datos_intactos()
 
 
 if __name__ == "__main__":
