@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestión Operativa Campuslands</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="encabezado">
+    <h1>Sistema Central de Gestión Operativa de Campuslands</h1>
+    <span id="estado-ia" class="insignia insignia-pendiente">IA: verificando…</span>
+  </header>
+
+  <nav class="pestanas" role="tablist">
+    <button class="pestana activa" data-pestana="grilla" role="tab">Grilla</button>
+    <button class="pestana" data-pestana="espacios" role="tab">Espacios</button>
+    <button class="pestana" data-pestana="cohortes" role="tab">Cohortes</button>
+    <button class="pestana" data-pestana="calidad" role="tab">Calidad de datos</button>
+  </nav>
+
+  <main>
+    <section id="grilla" class="panel activo">
+      <div class="controles">
+        <label>Fecha
+          <select id="selector-fecha"></select>
+        </label>
+        <div id="leyenda" class="leyenda"></div>
+      </div>
+      <p class="estado" aria-live="polite"></p>
+      <div class="tabla-scroll"><table id="tabla-grilla" class="grilla"></table></div>
+    </section>
+
+    <section id="espacios" class="panel">
+      <p class="estado" aria-live="polite"></p>
+      <div class="contenido"></div>
+    </section>
+
+    <section id="cohortes" class="panel">
+      <p class="estado" aria-live="polite"></p>
+      <div class="contenido"></div>
+    </section>
+
+    <section id="calidad" class="panel">
+      <div class="controles">
+        <button id="boton-recargar" type="button">Recargar datos</button>
+      </div>
+      <p class="estado" aria-live="polite"></p>
+      <div class="contenido"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
