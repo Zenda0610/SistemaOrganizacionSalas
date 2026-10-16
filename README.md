@@ -6,6 +6,7 @@
 
 - **Fase 1:** completa. Base del proyecto, carga validada de datos ficticios, API de lectura, interfaz mínima y conexión de prueba a la IA.
 - **Fase 1, corrección de persistencia:** en revisión en la rama `fix/persistencia-carga`.
+- **Identidad y permisos (provisional):** en la rama `feat/identidad-permisos`. Identidad de desarrollo y matriz de permisos por rol. No es autenticación.
 - **Fase 2:** pendiente. Reglas de negocio, reservas, préstamos, incidencias y triaje con IA.
 
 ## Problema
@@ -52,6 +53,27 @@ Una respuesta 200 solo se muestra como importación correcta si cumple el contra
 - No se alquilan espacios en mantenimiento o inhabilitados.
 - Los umbrales se definirán como variables de entorno en `app/config.py`.
 
+## Identidad y permisos
+
+**Estado: provisional.** El esquema oficial de usuarios todavía no existe. Esta etapa no autentica a nadie.
+
+- La identidad sale solo de la configuración del servidor: `USUARIO_DESARROLLO` y `ROL_DESARROLLO` en `.env`. Ningún dato de la petición (cuerpo, cabecera o query) puede cambiar el rol.
+- Con las variables vacías no hay identidad: las acciones protegidas responden 401 (`sin_identidad`). Sin permiso, responden 403 (`sin_permiso`) y no se ejecutan.
+- Quien tenga acceso al proceso o al `.env` puede cambiar la identidad. Por eso sirve solo para desarrollo local en `127.0.0.1`.
+- `GET /api/sesion` muestra la identidad activa. La interfaz la marca como usuario de desarrollo.
+- La carga por línea de comandos (`python -m app.carga_datos`) es una operación local y no pasa por la API ni por la verificación de roles.
+
+Matriz de permisos (en `app/permisos.py`):
+
+| Permiso | Roles |
+|---|---|
+| `solicitar_aula_academica` | profesor, administrativo (autorizado: provisional, por rol) |
+| `solicitar_alquiler_comercial` | estudiante, empresa (sujeta a pago; sin tarifas ni pasarela en esta etapa) |
+| `autorizar_solicitud` | coordinadora |
+| `recargar_datos` | coordinadora |
+
+Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora puede autorizar sus propias solicitudes.
+
 ## Instalación
 
 Requisitos: Python 3.11 o superior.
@@ -78,7 +100,7 @@ python -m app.carga_datos
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Abre `http://127.0.0.1:8000`. El host `127.0.0.1` evita que otros equipos de la red usen el endpoint de recarga, que todavía no tiene autenticación.
+Abre `http://127.0.0.1:8000`. El host `127.0.0.1` limita el acceso a este equipo, pero no reemplaza la verificación de permisos de la sección «Identidad y permisos».
 
 **Pruebas:**
 

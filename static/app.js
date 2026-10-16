@@ -18,7 +18,7 @@ const cargadosPorPestana = new Set();
 // Códigos que el servidor devuelve solo cuando la importación no se aplicó.
 const CODIGOS_IMPORTACION_NO_APLICADA = new Set([
   "archivo_ausente", "archivo_no_legible", "estructura_incompatible",
-  "catalogo_vacio", "error_escritura", "error_interno",
+  "catalogo_vacio", "error_escritura", "error_interno", "sin_identidad", "sin_permiso",
 ]);
 
 function errorResultadoDesconocido(mensaje) {
@@ -355,6 +355,20 @@ async function recargarDatos() {
   }
 }
 
+// --- Sesión --------------------------------------------------------------------
+
+async function cargarSesion() {
+  const aviso = document.getElementById("aviso-sesion");
+  try {
+    const sesion = await pedir("/sesion");
+    aviso.textContent = `USUARIO DE DESARROLLO: ${sesion.usuario_id} (rol ${sesion.rol}). No es autenticación.`;
+  } catch (error) {
+    aviso.textContent = error.codigo === "sin_identidad"
+      ? "Sin identidad de desarrollo configurada. Las acciones protegidas no están disponibles."
+      : `No se pudo leer la sesión. ${error.message}`;
+  }
+}
+
 // --- Estado de la IA -----------------------------------------------------------
 
 async function cargarEstadoIA() {
@@ -380,3 +394,4 @@ document.querySelectorAll(".pestana").forEach((boton) => {
 document.getElementById("boton-recargar").addEventListener("click", recargarDatos);
 activarPestana("grilla");
 cargarEstadoIA();
+cargarSesion();

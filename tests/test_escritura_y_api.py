@@ -49,6 +49,7 @@ class PruebasEscritura(BasePrueba):
 class PruebasApi(BasePrueba):
     def setUp(self):
         super().setUp()
+        self.usar_identidad("coordinadora")
         self.assertTrue(carga_datos.cargar_datos()["ok"])
         self.cambiar_aforo("E01", 99)
 

@@ -22,6 +22,18 @@ class BasePrueba(unittest.TestCase):
         config.RUTA_BASE_DATOS = str(raiz / "prueba.db")
         config.RUTA_DATOS = str(self.carpeta_datos)
         db.inicializar_base()
+        self.usar_identidad(None)
+
+    def usar_identidad(self, rol):
+        """Fija la identidad de desarrollo del servidor para la prueba. None = sin identidad."""
+        previa = (config.USUARIO_DESARROLLO, config.ROL_DESARROLLO)
+        config.USUARIO_DESARROLLO = "dev-prueba" if rol else ""
+        config.ROL_DESARROLLO = rol or ""
+        self.addCleanup(self._restaurar_identidad, previa)
+
+    @staticmethod
+    def _restaurar_identidad(previa):
+        config.USUARIO_DESARROLLO, config.ROL_DESARROLLO = previa
 
     def tearDown(self):
         config.RUTA_BASE_DATOS, config.RUTA_DATOS = self._configuracion_previa

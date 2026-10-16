@@ -40,12 +40,13 @@ function cargarInterfaz(respuestaImportacion) {
     Option: function Option() {},
     fetch: async (url, opciones = {}) => {
       if (opciones.method === "POST") return respuestaImportacion();
+      if (url.endsWith("/sesion")) return respuestaJson(200, { usuario_id: "dev-prueba", rol: "coordinadora", origen: "desarrollo" });
       return respuestaJson(200, []);
     },
   };
   vm.createContext(contexto);
   vm.runInContext(codigoInterfaz, contexto);
-  return { contexto, banner: () => elementos["resultado-importacion"].textContent };
+  return { contexto, elementos, banner: () => elementos["resultado-importacion"].textContent };
 }
 
 // Respuesta 200 cuyo cuerpo no cumple el contrato de éxito: el resultado es desconocido.
@@ -114,6 +115,22 @@ const casos = [
       assert.doesNotMatch(texto, /undefined/);
     },
   },
+  {
+    nombre: "sin identidad (401): se indica que no se aplicó y que se conservaron los datos",
+    respuesta: () => respuestaJson(401, { mensaje: "Sin identidad.", codigo: "sin_identidad" }),
+    esperado: (texto) => {
+      assert.match(texto, /no se aplicó \(sin_identidad\)/);
+      assert.match(texto, /Se conservaron los datos anteriores/);
+    },
+  },
+  {
+    nombre: "sin permiso (403): se indica que no se aplicó y que se conservaron los datos",
+    respuesta: () => respuestaJson(403, { mensaje: "Sin permiso.", codigo: "sin_permiso" }),
+    esperado: (texto) => {
+      assert.match(texto, /no se aplicó \(sin_permiso\)/);
+      assert.match(texto, /Se conservaron los datos anteriores/);
+    },
+  },
   casoContratoInvalido("cuerpo {}", {}),
   casoContratoInvalido("cuerpo []", []),
   casoContratoInvalido("cuerpo null", null),
@@ -141,6 +158,16 @@ const casos = [
       fallos += 1;
       console.log("FAIL -", caso.nombre, "\n     ", error.message.split("\n")[0], "\n      banner:", interfaz.banner());
     }
+  }
+  // La sesión muestra la identidad de desarrollo y el aviso de que no es autenticación.
+  const sesion = cargarInterfaz(() => respuestaJson(200, {}));
+  await vm.runInContext("cargarSesion()", sesion.contexto);
+  try {
+    assert.match(sesion.elementos["aviso-sesion"].textContent, /USUARIO DE DESARROLLO: dev-prueba \(rol coordinadora\)\. No es autenticación\./);
+    console.log("ok   - la sesión muestra usuario de desarrollo y aviso");
+  } catch (error) {
+    fallos += 1;
+    console.log("FAIL - la sesión muestra usuario de desarrollo y aviso\n     ", error.message.split("\n")[0]);
   }
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);

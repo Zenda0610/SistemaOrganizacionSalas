@@ -12,7 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
 from app import carga_datos, db, ia
+from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
+from app.permisos import requerir_permiso
 
 logger = logging.getLogger(__name__)
 RAIZ_STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -50,6 +52,19 @@ async def manejar_error_validacion(_request, _error: RequestValidationError):
 async def manejar_error_general(_request, error: Exception):
     logger.exception("Error no controlado: %s", error)
     return JSONResponse(status_code=500, content={"mensaje": "Error interno del servidor.", "codigo": "error_interno_servidor"})
+
+
+@app.exception_handler(ErrorAcceso)
+async def manejar_error_acceso(_request, error: ErrorAcceso):
+    return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
+
+
+# --- Sesión ----------------------------------------------------------------------
+
+@app.get("/api/sesion")
+def sesion_actual() -> dict:
+    identidad = identidad_actual()
+    return {"usuario_id": identidad.usuario_id, "rol": identidad.rol, "origen": identidad.origen}
 
 
 # --- API de lectura ------------------------------------------------------------
@@ -112,7 +127,7 @@ CODIGOS_HTTP_IMPORTACION = {
 }
 
 
-@app.post("/api/datos/recargar")
+@app.post("/api/datos/recargar", dependencies=[requerir_permiso("recargar_datos")])
 def recargar_datos():
     resultado = carga_datos.cargar_datos()
     if resultado["ok"]:

@@ -37,4 +37,8 @@ IA_MODELO = _texto("IA_MODELO")
 IA_API_KEY = _texto("IA_API_KEY")
 IA_TIMEOUT_SEGUNDOS = _entero("IA_TIMEOUT_SEGUNDOS", 20)
 
+# Identidad de desarrollo: NO es autenticación. Ver app/identidad.py.
+USUARIO_DESARROLLO = _texto("USUARIO_DESARROLLO")
+ROL_DESARROLLO = _texto("ROL_DESARROLLO")
+
 # Umbrales de reglas de negocio: se definirán en la fase 2, junto con app/reglas.py.
