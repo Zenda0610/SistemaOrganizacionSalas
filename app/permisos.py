@@ -13,6 +13,7 @@ PERMISOS = {
     "recargar_datos": frozenset({"coordinadora"}),
     "gestionar_recursos": frozenset({"coordinadora"}),
     "prestar_equipo": frozenset({"profesor", "administrativo", "coordinadora"}),
+    "ver_notificaciones": frozenset({"coordinadora"}),
 }
 
 

@@ -20,6 +20,7 @@ ESPERADO = {
     "recargar_datos": {"coordinadora"},
     "gestionar_recursos": {"coordinadora"},
     "prestar_equipo": {"profesor", "administrativo", "coordinadora"},
+    "ver_notificaciones": {"coordinadora"},
 }
 
 

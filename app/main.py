@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as ErrorHTTP
 
-from app import carga_datos, db, ia, reubicaciones, operaciones
+from app import carga_datos, coordinacion, db, ia, reubicaciones, operaciones
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
@@ -67,6 +67,13 @@ async def manejar_error_acceso(_request, error: ErrorAcceso):
 @app.exception_handler(chat_solicitudes.ErrorChat)
 async def manejar_error_chat(_request, error: chat_solicitudes.ErrorChat):
     return JSONResponse(status_code=error.estado, content={"mensaje": error.mensaje, "codigo": error.codigo})
+
+
+@app.exception_handler(coordinacion.ErrorAsistente)
+async def manejar_error_asistente(_request, error: coordinacion.ErrorAsistente):
+    # Sin texto simulado: solo el motivo y el resumen calculado desde la base.
+    return JSONResponse(status_code=503, content={"mensaje": error.mensaje, "codigo": "ia_no_disponible",
+                                                  "resumen": error.resumen})
 
 
 @app.exception_handler(ErrorSolicitud)
@@ -264,6 +271,18 @@ def reportar(datos: operaciones.Reporte, identidad: Identidad = Depends(identida
 @app.post("/api/incidencias/{identificador}/revisar")
 def revisar(identificador: int, datos: operaciones.Revision, identidad: Identidad = Depends(identidad_actual)):
     return operaciones.revisar(identificador, datos, identidad)
+
+
+# --- Asistente de coordinación ------------------------------------------------
+
+@app.get("/api/coordinacion/resumen", dependencies=[requerir_permiso("ver_notificaciones")])
+def resumen_coordinacion() -> dict:
+    return coordinacion.resumen()
+
+
+@app.post("/api/coordinacion/asistente", dependencies=[requerir_permiso("ver_notificaciones")])
+def asistente_coordinacion(cuerpo: coordinacion.Pregunta) -> dict:
+    return coordinacion.asistente(cuerpo.mensaje)
 
 
 # La interfaz se sirve al final para que no tape las rutas /api.
