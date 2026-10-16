@@ -371,7 +371,7 @@ def _resumen(validados: dict, conflictos: int) -> dict:
     }
 
 
-def cargar_datos() -> dict:
+def _importar() -> dict:
     """Importa los CSV reemplazando la carga anterior, solo si todos los archivos obligatorios sirven.
 
     Si algo falla, la base queda exactamente como estaba. Nunca lanza excepciones.
@@ -388,6 +388,42 @@ def cargar_datos() -> dict:
         return {"ok": False, "error": ErrorImportacion("error_escritura", None,
                                                     f"No se pudo guardar la importación: {error}").a_dict()}
     return _resumen(validados, conflictos)
+
+
+def cargar_datos() -> dict:
+    """Importa los CSV y registra el intento. Nunca lanza excepciones."""
+    resultado = _importar()
+    _registrar_importacion(resultado)
+    return resultado
+
+
+def _registrar_importacion(resultado: dict) -> None:
+    """Guarda el intento en su propia transacción, para que sobreviva a un reemplazo fallido."""
+    error = resultado["error"]
+    if error:
+        exito, codigo, archivo, mensaje = 0, error["codigo"], error["archivo"], error["mensaje"]
+    else:
+        exito, codigo, archivo = 1, None, None
+        detalle = ", ".join(f"{a} {n}" for a, n in resultado["cargados"].items())
+        mensaje = f"Importación correcta: {detalle}; conflictos: {resultado['conflictos']}"
+    try:
+        with db.transaccion() as con:
+            con.execute(
+                "INSERT INTO importaciones (exito, codigo, archivo, mensaje) VALUES (?, ?, ?, ?)",
+                (exito, codigo, archivo, mensaje),
+            )
+    except Exception:
+        logger.exception("No se pudo registrar el intento de importación")
+
+
+def _ultima_importacion() -> Optional[dict]:
+    filas = db.consultar(
+        "SELECT fecha_hora, exito, codigo, archivo, mensaje FROM importaciones ORDER BY id DESC LIMIT 1"
+    )
+    if not filas:
+        return None
+    filas[0]["exito"] = bool(filas[0]["exito"])
+    return filas[0]
 
 
 def consultar_calidad() -> dict:
@@ -415,7 +451,7 @@ def consultar_calidad() -> dict:
         rechazo["contenido"] = json.loads(rechazo["contenido"])
     return {
         "resumen": resumen,
-        "errores_carga": db.consultar("SELECT archivo, mensaje FROM errores_carga ORDER BY id"),
+        "ultima_importacion": _ultima_importacion(),
         "rechazados": rechazos,
         "correcciones": db.consultar(
             "SELECT archivo, fila, id_registro, campo, valor_original, valor_corregido "

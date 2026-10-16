@@ -102,9 +102,24 @@ def calidad_datos() -> dict:
     return carga_datos.consultar_calidad()
 
 
+CODIGOS_HTTP_IMPORTACION = {
+    "archivo_ausente": 422,
+    "archivo_no_legible": 422,
+    "estructura_incompatible": 422,
+    "error_escritura": 500,
+}
+
+
 @app.post("/api/datos/recargar")
-def recargar_datos() -> dict:
-    return carga_datos.cargar_datos()
+def recargar_datos():
+    resultado = carga_datos.cargar_datos()
+    if resultado["ok"]:
+        return resultado
+    error = resultado["error"]
+    return JSONResponse(
+        status_code=CODIGOS_HTTP_IMPORTACION[error["codigo"]],
+        content={"mensaje": error["mensaje"], "codigo": error["codigo"], "archivo": error["archivo"]},
+    )
 
 
 @app.get("/api/ia/salud")

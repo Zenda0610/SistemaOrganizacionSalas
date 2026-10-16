@@ -68,15 +68,19 @@ CREATE TABLE IF NOT EXISTS conflictos (
     referencia_relacionada TEXT,
     descripcion TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS errores_carga (
+CREATE TABLE IF NOT EXISTS importaciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    archivo TEXT NOT NULL,
+    fecha_hora TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    exito INTEGER NOT NULL,
+    codigo TEXT,
+    archivo TEXT,
     mensaje TEXT NOT NULL
 );
 """
 
 # Orden de borrado: primero las tablas hijas, para respetar las llaves foráneas.
-TABLAS_CARGA = ("conflictos", "correcciones", "registros_rechazados", "errores_carga", "cohortes", "sesiones", "espacios")
+# `importaciones` no entra: el historial de intentos sobrevive a cada reemplazo.
+TABLAS_CARGA = ("conflictos", "correcciones", "registros_rechazados", "cohortes", "sesiones", "espacios")
 
 
 def conectar() -> sqlite3.Connection:
@@ -100,9 +104,14 @@ def inicializar_base() -> None:
 
 @contextmanager
 def transaccion() -> Iterator[sqlite3.Connection]:
-    """Entrega una conexión dentro de una transacción: confirma al final o revierte si falla."""
+    """Entrega una conexión dentro de una transacción: confirma al final o revierte si falla.
+
+    BEGIN IMMEDIATE toma el bloqueo de escritura desde el inicio: dos importaciones
+    simultáneas no pueden intercalarse.
+    """
     con = conectar()
     try:
+        con.execute("BEGIN IMMEDIATE")
         yield con
         con.commit()
     except Exception:
