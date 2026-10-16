@@ -29,7 +29,9 @@ async function pedir(ruta, opciones = {}) {
     // La respuesta no era JSON; se usa el mensaje genérico de abajo.
   }
   if (!respuesta.ok) {
-    throw new Error((datos && datos.mensaje) || `Error ${respuesta.status} al consultar la API.`);
+    const error = new Error((datos && datos.mensaje) || `Error ${respuesta.status} al consultar la API.`);
+    error.codigo = datos && datos.codigo;
+    throw error;
   }
   return datos;
 }
@@ -245,10 +247,8 @@ async function cargarCalidad() {
     { titulo: "Conflictos", valor: (r) => r.conflictos },
   ], datos.resumen));
 
-  bloques.appendChild(crearElemento("h2", "seccion-titulo", "Errores de carga"));
-  bloques.appendChild(datos.errores_carga.length
-    ? crearTabla([{ titulo: "Archivo", valor: (e) => e.archivo }, { titulo: "Mensaje", valor: (e) => e.mensaje }], datos.errores_carga)
-    : crearElemento("p", "estado", "Sin errores de carga."));
+  bloques.appendChild(crearElemento("h2", "seccion-titulo", "Última importación"));
+  bloques.appendChild(pintarUltimaImportacion(datos.ultima_importacion));
 
   bloques.appendChild(crearElemento("h2", "seccion-titulo", "Registros rechazados"));
   bloques.appendChild(datos.rechazados.length
@@ -286,22 +286,35 @@ async function cargarCalidad() {
   mostrarEstado("calidad", "ok", "");
 }
 
+// Muestra el último intento de importación. Vive fuera de .estado, así que no lo borra la carga de la tabla.
+function pintarUltimaImportacion(importacion) {
+  if (!importacion) return crearElemento("p", "estado", "Todavía no se ha importado ningún dato.");
+  const texto = importacion.exito
+    ? `${importacion.fecha_hora}: ${importacion.mensaje}`
+    : `${importacion.fecha_hora}: la importación falló (${importacion.codigo}). ${importacion.mensaje}. Se conservaron los datos anteriores.`;
+  return crearElemento("p", importacion.exito ? "estado estado-ok" : "estado estado-error", texto);
+}
+
+function mostrarResultadoImportacion(tipo, texto) {
+  const caja = document.getElementById("resultado-importacion");
+  caja.className = `resultado estado-${tipo}`;
+  caja.textContent = texto;
+}
+
 async function recargarDatos() {
   const boton = document.getElementById("boton-recargar");
   boton.disabled = true;
-  mostrarEstado("calidad", "cargando", "Recargando datos…");
+  mostrarEstado("calidad", "cargando", "Importando datos…");
   try {
     const resumen = await pedir("/datos/recargar", { method: "POST" });
-    const errores = resumen.errores.length ? ` Errores: ${resumen.errores.join(" ")}` : "";
-    mostrarEstado("calidad", resumen.errores.length ? "error" : "ok", `Recarga terminada.${errores}`);
-    await cargarCalidad();
-    cargadosPorPestana.delete("grilla");
-    cargadosPorPestana.delete("espacios");
-    cargadosPorPestana.delete("cohortes");
+    mostrarResultadoImportacion("ok", `Importación correcta. Cargados: ${JSON.stringify(resumen.cargados)}. Conflictos: ${resumen.conflictos}.`);
+    cargadosPorPestana.clear();
   } catch (error) {
-    mostrarEstado("calidad", "error", error.message);
+    const codigo = error.codigo ? ` (${error.codigo})` : "";
+    mostrarResultadoImportacion("error", `La importación falló${codigo}: ${error.message} Se conservaron los datos anteriores.`);
   } finally {
     boton.disabled = false;
+    await cargarCalidad().catch((error) => mostrarEstado("calidad", "error", error.message));
   }
 }
 
