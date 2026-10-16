@@ -18,7 +18,15 @@ def normalizar(texto: str) -> str:
 
 
 def es_azul(aula: dict) -> bool:
-    return normalizar(aula.get("nombre", "")) in {"azul", "sala azul"}
+    objetivo = normalizar(config.AULA_PREFERIDA_ZONA_FRANCA)
+    equivalentes = next((grupo for grupo in ALIAS_AULAS if objetivo in grupo), {objetivo})
+    return normalizar(aula.get("nombre", "")) in equivalentes
+
+
+def aforo_permitido(aula: dict) -> int:
+    """Redondea hacia abajo y nunca supera la capacidad física del catálogo."""
+    porcentaje = max(0, min(100, config.PORCENTAJE_AFORO_MAXIMO))
+    return aula['aforo'] * porcentaje // 100
 
 
 def actividad_desde_texto(texto: str) -> str:

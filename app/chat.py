@@ -215,8 +215,8 @@ def _motivo_no_disponible(espacio_id: str, ini: datetime, fin: datetime, persona
         return "El aula ya no existe"
     if espacio["estado"] != "activo":
         return f"{espacio['nombre']} no está disponible (estado: {espacio['estado']})"
-    if personas > espacio["aforo"]:
-        return f"El aforo de {espacio['nombre']} es {espacio['aforo']}"
+    if personas > reglas.aforo_permitido(espacio):
+        return f"El aforo permitido de {espacio['nombre']} es {reglas.aforo_permitido(espacio)}"
     return f"{espacio['nombre']} está ocupada en ese horario"
 
 
@@ -250,7 +250,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict)
     if datos.get("es_zona_franca") and datos.get("permite_reubicacion"):
         with db.transaccion() as con:
             for aula in _catalogo():
-                if reglas.es_azul(aula) and aula["estado"] == "activo" and aula["aforo"] >= personas and solicitudes.elementos_compatibles(aula, requeridos):
+                if reglas.es_azul(aula) and aula["estado"] == "activo" and reglas.aforo_permitido(aula) >= personas and solicitudes.elementos_compatibles(aula, requeridos):
                     prueba = {"espacio_id": aula["id"], "inicio": _fmt(ini), "fin": _fmt(fin), "tipo": "academica", "actividad": "zona_franca"}
                     origen = reubicaciones.origen_ser(con, prueba)
                     if origen and datetime.fromisoformat(origen["inicio"]) > datetime.now() and ini > datetime.now():
@@ -366,7 +366,7 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
             espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos["propuesta_id"],)).fetchone()
             if espacio is None or espacio["estado"] != "activo" or db.aula_bloqueada(con, datos["propuesta_id"]):
                 raise _Revisar("el aula ya no está disponible")
-            if datos["personas"] > espacio["aforo"]:
+            if datos["personas"] > reglas.aforo_permitido(espacio):
                 raise _Revisar("el aforo ya no alcanza")
             if not solicitudes.elementos_compatibles(dict(espacio), datos.get("elementos_requeridos", [])):
                 raise _Revisar("los elementos requeridos no están verificados")

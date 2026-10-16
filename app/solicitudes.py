@@ -138,7 +138,7 @@ def crear_en(con, identidad: Identidad, datos: NuevaSolicitud) -> int:
         raise ErrorSolicitud(404, "espacio_no_encontrado", "No existe el espacio indicado.")
     if espacio["estado"] != "activo" or db.aula_bloqueada(con, datos.espacio_id):
         raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
-    if datos.personas > espacio["aforo"]:
+    if datos.personas > reglas.aforo_permitido(espacio):
         raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
     if not elementos_compatibles(dict(espacio), datos.elementos_requeridos):
         raise ErrorSolicitud(409, "elementos_no_verificados", "No están verificados los elementos requeridos en el catálogo.")
@@ -173,7 +173,7 @@ def aprobar_en(con, solicitud_id: int, identidad: Identidad) -> None:
     espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (fila["espacio_id"],)).fetchone()
     if espacio is None or espacio["estado"] != "activo" or db.aula_bloqueada(con, fila["espacio_id"]):
         raise ErrorSolicitud(409, "espacio_no_disponible", "El espacio no está activo.")
-    if fila["personas"] > espacio["aforo"]:
+    if fila["personas"] > reglas.aforo_permitido(espacio):
         raise ErrorSolicitud(409, "aforo_excedido", "Las personas superan el aforo del espacio.")
     if not elementos_compatibles(dict(espacio), json.loads(fila["elementos_requeridos"])):
         raise ErrorSolicitud(409, "elementos_no_verificados", "Los elementos requeridos ya no están verificados.")
@@ -232,7 +232,9 @@ def espacios_disponibles(inicio: datetime, fin: datetime, personas: Optional[int
             (personas, personas),
         ).fetchall()
         return [dict(espacio) for espacio in candidatos
-                if not db.aula_bloqueada(con, espacio["id"]) and not buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)
+                if (personas is None or personas <= reglas.aforo_permitido(espacio))
+                and reglas.aforo_permitido(espacio) > 0
+                and not db.aula_bloqueada(con, espacio["id"]) and not buscar_conflictos(con, espacio["id"], inicio_txt, fin_txt)
                 and elementos_compatibles(dict(espacio), elementos_requeridos or [])]
     finally:
         con.close()

@@ -28,6 +28,8 @@ RUTA_DATOS = _texto("RUTA_DATOS", str(RAIZ_PROYECTO / "data" / "ficticio"))
 # Bloques de tiempo: las horas de las sesiones deben caer en múltiplos de estos minutos (operación 24/7)
 MINUTOS_BLOQUE = _entero("MINUTOS_BLOQUE", 15)
 MINUTOS_DEVOLUCION_ANTICIPADA = _entero("MINUTOS_DEVOLUCION_ANTICIPADA", 5)
+PORCENTAJE_AFORO_MAXIMO = _entero("PORCENTAJE_AFORO_MAXIMO", 100)
+AULA_PREFERIDA_ZONA_FRANCA = _texto("AULA_PREFERIDA_ZONA_FRANCA", "Sala Azul")
 
 # Cliente de IA: IA_PROVEEDOR = "ollama" o "openai" (API compatible con OpenAI)
 IA_PROVEEDOR = _texto("IA_PROVEEDOR")

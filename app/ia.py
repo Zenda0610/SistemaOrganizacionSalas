@@ -30,7 +30,7 @@ def _problema_configuracion() -> str | None:
     if _openrouter():
         if not config.IA_MODELO.endswith(":free"):
             return "OpenRouter requiere un modelo :free explícito. No se usarán modelos de pago."
-        if not config.IA_API_KEY or config.IA_API_KEY == 'PEGA_AQUI_TU_CLAVE':
+        if not config.IA_API_KEY:
             return "Falta IA_API_KEY en el .env del servidor."
     return None
 
