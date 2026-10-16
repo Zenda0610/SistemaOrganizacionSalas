@@ -272,3 +272,12 @@ footer { color: var(--texto-suave); font-size: 0.75rem; padding: 26px 0; }
   .pie-chat { align-items: flex-start; }
   .calendario-scroll { max-height: 360px; }
 }
+
+/* Asistente de coordinación */
+.asistente-coordinacion { position: static; margin-top: 18px; }
+.lista-notificaciones { list-style: none; margin: 10px 0; padding: 0; max-height: 40vh; overflow-y: auto; }
+.lista-notificaciones li { padding: 8px 10px; margin-bottom: 6px; border-left: 3px solid var(--borde); background: var(--fondo); border-radius: 6px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.lista-notificaciones li.nivel-importante { border-left-color: var(--error); }
+.lista-notificaciones .etiqueta { margin-right: 6px; }
+.lista-notificaciones .nivel-importante .etiqueta { color: var(--error); }
+.historial-coordinacion:empty::before { content: "Pulsa «Resumir notificaciones» o escribe una pregunta."; }

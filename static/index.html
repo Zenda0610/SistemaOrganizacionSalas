@@ -80,6 +80,19 @@
       <p id="resultado-solicitudes" class="resultado" role="status"></p>
       <div id="solicitudes-registradas" class="tabla-scroll"></div>
       <div id="reubicacion-propuesta" aria-live="polite"></div>
+      <aside id="asistente-coordinacion" class="asistente asistente-coordinacion" aria-labelledby="titulo-coordinacion" hidden>
+        <div class="titulo-seccion"><div><p class="marca">SOLO COORDINADORA</p><h2 id="titulo-coordinacion">Asistente de coordinación</h2></div><button id="actualizar-notificaciones" type="button">Actualizar lista</button></div>
+        <p class="ayuda">La lista se calcula desde la base de datos. La IA solo resume; no aprueba, bloquea ni cancela nada.</p>
+        <p id="estado-notificaciones" class="resultado" role="status"></p>
+        <ul id="lista-notificaciones" class="lista-notificaciones"></ul>
+        <div id="historial-coordinacion" class="historial-chat historial-coordinacion" role="log" aria-label="Respuestas del asistente" aria-live="polite"></div>
+        <p id="estado-asistente" class="resultado" role="status"></p>
+        <form id="form-coordinacion">
+          <label for="entrada-coordinacion">Pregunta al asistente</label>
+          <textarea id="entrada-coordinacion" rows="2" maxlength="1000" required placeholder="Ej.: ¿Qué debo atender antes de mañana?"></textarea>
+          <div class="pie-chat"><button id="resumir-notificaciones" type="button">Resumir notificaciones</button><button id="enviar-coordinacion" type="submit">Enviar</button></div>
+        </form>
+      </aside>
     </section>
     <section id="espacios" class="panel" role="tabpanel" aria-labelledby="tab-espacios" hidden>
       <h2>Catálogo de aulas</h2><p class="estado" aria-live="polite"></p><div class="contenido"></div>
@@ -96,5 +109,6 @@
   <footer>Entorno de desarrollo · Datos ficticios · Las reservas requieren aprobación de la coordinadora.</footer>
   <script src="/app.js"></script>
   <script src="/operaciones.js"></script>
+  <script src="/coordinacion.js"></script>
 </body>
 </html>

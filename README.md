@@ -141,5 +141,9 @@ Abrir http://127.0.0.1:8000 y http://127.0.0.1:8001 (no `file:///`). Tras editar
 Para enseñar ocupación, seleccionar 2026-10-16; para nuevas solicitudes, 2026-10-19.
 La plantilla contiene el modelo gratuito y `IA_API_KEY=` vacía.
 
+Asistente de coordinación (pestaña Solicitudes, solo coordinadora): lista las notificaciones calculadas
+desde la base (`GET /api/coordinacion/resumen`), primero las importantes y luego las necesarias.
+`POST /api/coordinacion/asistente` pide a la IA un resumen sin acciones; si la IA falla responde 503 con la lista.
+
 Pruebas: `python -m unittest discover -s tests -t .` y `node tests/test_interfaz.js`.
 Con `.venv`, usar su intérprete como arriba. Node simula DOM/HTTP; no es navegador.
