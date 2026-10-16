@@ -57,6 +57,28 @@ class ErrorFila(Exception):
     """Motivo legible por el que una fila no es válida."""
 
 
+class ErrorImportacion(Exception):
+    """Problema con un archivo obligatorio. Detiene la importación antes de tocar la base."""
+
+    def __init__(self, codigo: str, archivo: Optional[str], mensaje: str):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.archivo = archivo
+        self.mensaje = mensaje
+
+    def a_dict(self) -> dict:
+        return {"codigo": self.codigo, "archivo": self.archivo, "mensaje": self.mensaje}
+
+
+# Columnas que deben existir en cada CSV. Si falta una, la importación se detiene.
+COLUMNAS_REQUERIDAS = {
+    ARCHIVO_ESPACIOS: ("id", "nombre", "tipo", "aforo", "estado"),
+    ARCHIVO_SESIONES: ("id", "espacio_id", "fecha", "hora_inicio", "hora_fin", "tipo", "area",
+                       "es_zona_franca", "grupo", "cantidad_personas", "responsable", "estado"),
+    ARCHIVO_COHORTES: ("codigo", "espacio_id", "jornada", "ruta", "cantidad_campers", "fecha_fin", "trainer"),
+}
+
+
 # --- Normalización de valores ---------------------------------------------------
 
 def _sin_tildes(texto: str) -> str:
@@ -160,21 +182,25 @@ def _validar_cohorte(datos: dict, ids_espacios: set) -> Cohorte:
 
 # --- Lectura y procesamiento de archivos ----------------------------------------
 
-def _leer_filas(archivo: str) -> tuple[list, Optional[str]]:
-    """Devuelve (número_de_línea, datos) de cada fila, o un mensaje si el archivo no se puede leer."""
+def _leer_filas(archivo: str) -> list:
+    """Devuelve (número_de_línea, datos) de cada fila. Lanza ErrorImportacion si el archivo no sirve."""
     ruta = Path(config.RUTA_DATOS) / archivo
     if not ruta.exists():
-        return [], f"no se encontró el archivo {archivo} en {config.RUTA_DATOS}"
+        raise ErrorImportacion("archivo_ausente", archivo, f"no se encontró {archivo} en {config.RUTA_DATOS}")
     try:
         with open(ruta, newline="", encoding="utf-8-sig") as archivo_abierto:
             lector = csv.DictReader(archivo_abierto)
-            filas = [
+            columnas = [c.strip() for c in (lector.fieldnames or [])]
+            faltantes = [c for c in COLUMNAS_REQUERIDAS[archivo] if c not in columnas]
+            if faltantes:
+                raise ErrorImportacion("estructura_incompatible", archivo,
+                                       f"faltan columnas en {archivo}: {', '.join(faltantes)}")
+            return [
                 (numero + 2, {k.strip(): (v or "").strip() for k, v in fila.items() if k})
                 for numero, fila in enumerate(lector)
             ]
-        return filas, None
     except (OSError, csv.Error, UnicodeDecodeError) as error:
-        return [], f"no se pudo leer {archivo}: {error}"
+        raise ErrorImportacion("archivo_no_legible", archivo, f"no se pudo leer {archivo}: {error}") from error
 
 
 def _rechazo(archivo: str, fila: int, datos: dict, motivo: str) -> dict:
@@ -231,20 +257,10 @@ def _guardar_auxiliares(con, archivo: str, rechazos: list, validos: list) -> Non
             )
 
 
-def _cargar_tabla(con, tabla, archivo, validar, clave, resumen) -> list:
-    """Carga un archivo completo. Devuelve los registros válidos (lista vacía si el archivo falla)."""
-    filas, error_lectura = _leer_filas(archivo)
-    if error_lectura:
-        con.execute("INSERT INTO errores_carga (archivo, mensaje) VALUES (?, ?)", (archivo, error_lectura))
-        resumen["errores"].append(error_lectura)
-        return []
-    validos, rechazos = _procesar(archivo, filas, validar, clave, CATALOGOS[archivo])
-    _insertar_validos(con, tabla, archivo, validos)
-    _guardar_auxiliares(con, archivo, rechazos, validos)
-    resumen["cargados"][archivo] = len(validos)
-    resumen["rechazados"][archivo] = len(rechazos)
-    resumen["corregidos"][archivo] = sum(len(i["correcciones"]) for i in validos)
-    return validos
+def _validar_archivo(archivo: str, validar: Callable, clave: Callable) -> dict:
+    """Lee y valida un archivo en memoria. No escribe nada en la base."""
+    validos, rechazos = _procesar(archivo, _leer_filas(archivo), validar, clave, CATALOGOS[archivo])
+    return {"validos": validos, "rechazos": rechazos}
 
 
 # --- Conflictos -----------------------------------------------------------------
@@ -319,24 +335,59 @@ def _detectar_conflictos(con) -> int:
 
 # --- Punto de entrada -----------------------------------------------------------
 
+TABLAS_POR_ARCHIVO = ((ARCHIVO_ESPACIOS, "espacios"), (ARCHIVO_SESIONES, "sesiones"), (ARCHIVO_COHORTES, "cohortes"))
+
+
+def _validar_todo() -> dict:
+    """Valida los tres archivos antes de tocar la base. Un archivo obligatorio roto detiene todo."""
+    espacios = _validar_archivo(ARCHIVO_ESPACIOS, _validar_espacio, lambda m: m.id)
+    ids_espacios = {item["modelo"].id for item in espacios["validos"]}
+    return {
+        ARCHIVO_ESPACIOS: espacios,
+        ARCHIVO_SESIONES: _validar_archivo(ARCHIVO_SESIONES,
+                                           lambda d: _validar_sesion(d, ids_espacios), lambda m: m.id),
+        ARCHIVO_COHORTES: _validar_archivo(ARCHIVO_COHORTES,
+                                           lambda d: _validar_cohorte(d, ids_espacios), lambda m: m.codigo),
+    }
+
+
+def _escribir(con, validados: dict) -> int:
+    """Reemplaza los datos dentro de la transacción recibida. Devuelve el número de conflictos."""
+    db.vaciar_tablas(con)
+    for archivo, tabla in TABLAS_POR_ARCHIVO:
+        _insertar_validos(con, tabla, archivo, validados[archivo]["validos"])
+        _guardar_auxiliares(con, archivo, validados[archivo]["rechazos"], validados[archivo]["validos"])
+    return _detectar_conflictos(con)
+
+
+def _resumen(validados: dict, conflictos: int) -> dict:
+    return {
+        "ok": True,
+        "error": None,
+        "cargados": {a: len(v["validos"]) for a, v in validados.items()},
+        "rechazados": {a: len(v["rechazos"]) for a, v in validados.items()},
+        "corregidos": {a: sum(len(i["correcciones"]) for i in v["validos"]) for a, v in validados.items()},
+        "conflictos": conflictos,
+    }
+
+
 def cargar_datos() -> dict:
-    """Recarga todos los datos. Nunca lanza excepciones: los fallos quedan en el resumen."""
-    resumen = {"cargados": {}, "rechazados": {}, "corregidos": {}, "conflictos": 0, "errores": []}
+    """Importa los CSV reemplazando la carga anterior, solo si todos los archivos obligatorios sirven.
+
+    Si algo falla, la base queda exactamente como estaba. Nunca lanza excepciones.
+    """
+    try:
+        validados = _validar_todo()
+    except ErrorImportacion as error:
+        return {"ok": False, "error": error.a_dict()}
     try:
         with db.transaccion() as con:
-            db.vaciar_tablas(con)
-            espacios = _cargar_tabla(con, "espacios", ARCHIVO_ESPACIOS,
-                                     lambda d: _validar_espacio(d), lambda m: m.id, resumen)
-            ids_espacios = {item["modelo"].id for item in espacios}
-            _cargar_tabla(con, "sesiones", ARCHIVO_SESIONES,
-                          lambda d: _validar_sesion(d, ids_espacios), lambda m: m.id, resumen)
-            _cargar_tabla(con, "cohortes", ARCHIVO_COHORTES,
-                          lambda d: _validar_cohorte(d, ids_espacios), lambda m: m.codigo, resumen)
-            resumen["conflictos"] = _detectar_conflictos(con)
-    except Exception as error:  # red de seguridad: la carga nunca tumba la aplicación
-        logger.exception("Error inesperado durante la carga de datos")
-        resumen["errores"].append(f"Error inesperado durante la carga: {error}")
-    return resumen
+            conflictos = _escribir(con, validados)
+    except Exception as error:  # la transacción ya revirtió el reemplazo
+        logger.exception("Error al escribir la importación")
+        return {"ok": False, "error": ErrorImportacion("error_escritura", None,
+                                                    f"No se pudo guardar la importación: {error}").a_dict()}
+    return _resumen(validados, conflictos)
 
 
 def consultar_calidad() -> dict:
