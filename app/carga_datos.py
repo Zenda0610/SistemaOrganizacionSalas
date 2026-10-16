@@ -147,18 +147,11 @@ def _a_minutos(hora: str) -> int:
     return int(horas) * 60 + int(minutos)
 
 
-def _verificar_grilla(hora_inicio: str, hora_fin: str) -> None:
-    """Revisa que el bloque caiga en la grilla operativa y en bloques completos."""
+def _verificar_bloques(hora_inicio: str, hora_fin: str) -> None:
+    """Revisa que las horas caigan en bloques completos. No hay horario de apertura: la operación es 24/7."""
     for hora in (hora_inicio, hora_fin):
         if _a_minutos(hora) % config.MINUTOS_BLOQUE:
             raise ErrorFila(f"la hora {hora} no cae en bloques de {config.MINUTOS_BLOQUE} minutos")
-    apertura = config.GRILLA_APERTURA_HORA * 60
-    cierre = config.GRILLA_CIERRE_HORA * 60
-    if _a_minutos(hora_inicio) < apertura or _a_minutos(hora_fin) > cierre:
-        raise ErrorFila(
-            f"el horario {hora_inicio}-{hora_fin} está fuera de la grilla "
-            f"({config.GRILLA_APERTURA_HORA:02d}:00 a {config.GRILLA_CIERRE_HORA:02d}:00)"
-        )
 
 
 def _validar_espacio(datos: dict) -> Espacio:
@@ -169,7 +162,7 @@ def _validar_sesion(datos: dict, ids_espacios: set) -> Sesion:
     sesion = Sesion(**datos)
     if sesion.espacio_id not in ids_espacios:
         raise ErrorFila(f"el espacio '{sesion.espacio_id}' no existe en {ARCHIVO_ESPACIOS}")
-    _verificar_grilla(sesion.hora_inicio, sesion.hora_fin)
+    _verificar_bloques(sesion.hora_inicio, sesion.hora_fin)
     return sesion
 
 

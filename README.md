@@ -39,7 +39,8 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 - Se corrige solo lo inequívoco, por ejemplo `CANCELADO` a `cancelada`. Cada corrección queda registrada.
 - Una hora sin AM/PM se rechaza. No se adivina.
 - Los solapamientos, los aforos excedidos y las cohortes vencidas se cargan y se marcan como conflictos. No se rechazan.
-- Las sesiones deben caer en la grilla operativa (`GRILLA_APERTURA_HORA` a `GRILLA_CIERRE_HORA`). La vista del calendario es de 24 horas, pero esta regla de carga no cambia.
+- Las horas de las sesiones deben caer en bloques de `MINUTOS_BLOQUE` minutos. No hay horario de apertura: la operación es 24/7.
+- **Límite del esquema de sesiones:** cada sesión del CSV tiene hora de inicio y de fin dentro del mismo día. Una sesión que cruza medianoche (22:00–02:00) o que termina a las 24:00 se rechaza como fila inválida. Las reservas con fecha completa sí cruzan medianoche.
 - Una importación reemplaza la carga anterior solo si los tres archivos obligatorios existen, se pueden leer y tienen las columnas requeridas. Si algo de eso falla, la base queda como estaba.
 - Cada intento de importación queda registrado en la tabla `importaciones`, también cuando falla.
 - `espacios.csv` sin filas válidas se rechaza (`catalogo_vacio`) y conserva los datos anteriores. Las sesiones y las cohortes vacías, en cambio, son válidas.

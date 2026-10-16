@@ -1,6 +1,6 @@
 // Interfaz mínima: consume la API y muestra estados de carga, vacío y error.
 const API = "/api";
-const HORA_APERTURA = 0;   // vista 24/7; la carga sigue limitando las sesiones a GRILLA_APERTURA_HORA
+const HORA_APERTURA = 0;   // vista 24/7
 const HORA_CIERRE = 24;    // vista 24/7 (24 = medianoche del día siguiente)
 const PASO_MINUTOS = 15;   // debe coincidir con MINUTOS_BLOQUE
 const NOMBRES_AREA = { software: "Software", ingles: "Inglés", ser: "SER", otra: "Otra" };
