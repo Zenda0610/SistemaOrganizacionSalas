@@ -1,0 +1,127 @@
+"""Conexión a SQLite y creación de tablas."""
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Iterator
+
+from app import config
+
+ESQUEMA = """
+CREATE TABLE IF NOT EXISTS espacios (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    aforo INTEGER NOT NULL CHECK (aforo > 0),
+    estado TEXT NOT NULL,
+    archivo_origen TEXT NOT NULL,
+    fila_origen INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sesiones (
+    id TEXT PRIMARY KEY,
+    espacio_id TEXT NOT NULL REFERENCES espacios(id),
+    fecha TEXT NOT NULL,
+    hora_inicio TEXT NOT NULL,
+    hora_fin TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    area TEXT NOT NULL,
+    es_zona_franca INTEGER NOT NULL,
+    grupo TEXT NOT NULL,
+    nivel TEXT,
+    cantidad_personas INTEGER NOT NULL,
+    responsable TEXT NOT NULL,
+    estado TEXT NOT NULL,
+    archivo_origen TEXT NOT NULL,
+    fila_origen INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cohortes (
+    codigo TEXT PRIMARY KEY,
+    espacio_id TEXT NOT NULL REFERENCES espacios(id),
+    jornada TEXT NOT NULL,
+    ruta TEXT NOT NULL,
+    cantidad_campers INTEGER NOT NULL,
+    fecha_fin TEXT NOT NULL,
+    trainer TEXT NOT NULL,
+    archivo_origen TEXT NOT NULL,
+    fila_origen INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS registros_rechazados (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archivo TEXT NOT NULL,
+    fila INTEGER NOT NULL,
+    contenido TEXT NOT NULL,
+    motivo TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS correcciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archivo TEXT NOT NULL,
+    fila INTEGER NOT NULL,
+    id_registro TEXT NOT NULL,
+    campo TEXT NOT NULL,
+    valor_original TEXT,
+    valor_corregido TEXT
+);
+CREATE TABLE IF NOT EXISTS conflictos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT NOT NULL,
+    archivo TEXT NOT NULL,
+    referencia TEXT NOT NULL,
+    referencia_relacionada TEXT,
+    descripcion TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS errores_carga (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archivo TEXT NOT NULL,
+    mensaje TEXT NOT NULL
+);
+"""
+
+# Orden de borrado: primero las tablas hijas, para respetar las llaves foráneas.
+TABLAS_CARGA = ("conflictos", "correcciones", "registros_rechazados", "errores_carga", "cohortes", "sesiones", "espacios")
+
+
+def conectar() -> sqlite3.Connection:
+    """Abre una conexión con filas accesibles por nombre de columna y llaves foráneas activas."""
+    Path(config.RUTA_BASE_DATOS).parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(config.RUTA_BASE_DATOS)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+
+
+def inicializar_base() -> None:
+    """Crea las tablas si no existen."""
+    con = conectar()
+    try:
+        con.executescript(ESQUEMA)
+        con.commit()
+    finally:
+        con.close()
+
+
+@contextmanager
+def transaccion() -> Iterator[sqlite3.Connection]:
+    """Entrega una conexión dentro de una transacción: confirma al final o revierte si falla."""
+    con = conectar()
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def consultar(sql: str, parametros: tuple = ()) -> list[dict]:
+    """Ejecuta una consulta de lectura y devuelve las filas como diccionarios."""
+    con = conectar()
+    try:
+        return [dict(fila) for fila in con.execute(sql, parametros).fetchall()]
+    finally:
+        con.close()
+
+
+def vaciar_tablas(con: sqlite3.Connection) -> None:
+    """Borra los datos cargados. Se usa al inicio de cada recarga para que no se dupliquen."""
+    for tabla in TABLAS_CARGA:
+        con.execute(f"DELETE FROM {tabla}")

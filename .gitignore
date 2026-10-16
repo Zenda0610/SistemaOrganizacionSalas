@@ -1,0 +1,11 @@
+# Secretos y configuración local
+.env
+
+# Bases de datos locales
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
