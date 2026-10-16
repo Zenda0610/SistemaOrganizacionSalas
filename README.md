@@ -8,6 +8,7 @@
 - **Fase 1, corrección de persistencia:** en revisión en la rama `fix/persistencia-carga`.
 - **Identidad y permisos (provisional):** en la rama `feat/identidad-permisos`. Identidad de desarrollo y matriz de permisos por rol. No es autenticación.
 - **Solicitudes de aulas (provisional):** en la rama `feat/solicitudes-aulas`. Disponibilidad, solicitud pendiente, aprobación validada y calendario de reservas. Sin pagos verificados.
+- **Interfaz de solicitudes:** pestaña propia para consultar solicitudes y aprobar como coordinadora. Actualiza el calendario y las fechas disponibles, manteniendo la identidad de desarrollo configurada en el servidor.
 - **Fase 2:** pendiente. Reglas de negocio, reservas, préstamos, incidencias y triaje con IA.
 
 ## Problema
@@ -75,7 +76,7 @@ Matriz de permisos (en `app/permisos.py`):
 | `autorizar_solicitud` | coordinadora |
 | `recargar_datos` | coordinadora |
 
-Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora puede autorizar sus propias solicitudes.
+Pendiente de definir: qué lecturas requieren identidad y el esquema oficial de usuarios. La coordinadora no puede aprobar sus propias solicitudes.
 
 ## Solicitudes de aulas
 
@@ -87,13 +88,17 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 - **Solicitud comercial:** queda con `requiere_pago = true` y `estado_pago = "pendiente"`. El sistema no cobra ni verifica pagos. No hay tarifas definidas.
 - **Aprobar:** `POST /api/solicitudes/{id}/aprobar`, solo para la coordinadora. La aprobación vuelve a validar, dentro de una transacción `BEGIN IMMEDIATE`, el estado del espacio, el aforo y los solapamientos con sesiones programadas y con reservas aprobadas. Dos aprobaciones simultáneas se ejecutan en serie. Nadie aprueba su propia solicitud.
 - **Listar:** `GET /api/solicitudes`. La coordinadora ve todas; los demás roles, solo las suyas.
+- **Interfaz:** la pestaña Solicitudes consulta ese listado y resuelve nombres desde el catálogo. Muestra horario, devolución, personas, motivo, estado y condición comercial; los pagos siguen sin verificarse. Solo la coordinadora ve Aprobar en solicitudes pendientes ajenas. El servidor mantiene la autorización y revalida aforo, estado y solapamientos.
+- **Resultado de aprobación:** el botón se desactiva durante la petición. Solo una respuesta válida con el ID y estado aprobados confirma éxito. Ante un fallo de red o una respuesta no concluyente se informa resultado desconocido y se pide Actualizar solicitudes antes de repetir. Un error al refrescar después de una aprobación confirmada no se presenta como fallo de la aprobación.
+- **Actualización:** el listado se actualiza al abrir la pestaña y después de enviar mensajes al chat. Aprobar refresca listado, calendario y selector de fechas, incorporando días nuevos aunque la grilla ya estuviera abierta. El calendario sigue siendo solo de lectura.
+- **Devolución anticipada:** `hora_devolucion` se calcula desde `fin` restando `MINUTOS_DEVOLUCION_ANTICIPADA` (variable opcional, 5 por defecto). Se incluye en solicitudes y reservas, y se muestra en las tablas y el detalle del bloque. No es un registro de devolución física: la ocupación sigue siendo `[inicio, fin)`. Una reserva 06:00–08:00 informa devolución 07:55, bloquea hasta 08:00 y admite otra que empiece a 08:00.
 - **Calendario (solo lectura):** `GET /api/reservas?fecha=AAAA-MM-DD` devuelve las reservas aprobadas que ocupan ese día, sin datos del solicitante. La grilla dibuja sesiones y reservas en 24 horas. Una reserva que cruza medianoche se recorta a cada día, y una de varios días aparece en todos los días que ocupa. Las sesiones canceladas no ocupan franjas. El selector de fechas incluye todos los días ocupados; un intervalo que termina exactamente a las 00:00 no ocupa el día siguiente. La tabla de reservas del día queda como detalle.
 - **Recargar datos:** no borra las reservas aprobadas. La tabla `solicitudes` no tiene llave foránea hacia `espacios` por esa razón.
 - **Recarga compatible con reservas:** antes de confirmar, la importación verifica cada reserva aprobada contra los datos entrantes: que el espacio exista y esté activo, que el aforo alcance y que no se cruce con una sesión programada. Si alguna falla, se rechaza toda la importación con `reserva_incompatible` (409) y la base queda como estaba. El sistema no cancela ni mueve reservas; la incompatibilidad se resuelve antes de importar.
 
 **Pendiente de definir:**
-- Reubicaciones, chat y flujo comercial completo (pago, tarifas, rechazo de solicitudes).
-- Regla de devolución: la devolución se exige cinco minutos antes del final, pero el aula sigue reservada hasta la hora final. Esta etapa aplica solo la reserva hasta la hora final. La devolución no está implementada.
+- Reubicaciones y flujo comercial completo (pago, tarifas, rechazo de solicitudes).
+- Registro de entrega o devolución física del aula; por ahora solo se calcula y muestra la hora prevista.
 
 ## Chat de solicitudes
 
@@ -101,8 +106,9 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 
 - `POST /api/chat` con `{"mensaje": "...", "conversacion_id": "..."}`. La IA extrae datos y propone una acción de una lista cerrada: `solicitar_aula`, `confirmar`, `cancelar`, `consultar_disponibilidad` o `ver_solicitudes`.
 - **Borrador:** cada usuario tiene un borrador por conversación. Guarda fecha, horario, personas, motivo, aula y la propuesta vigente. Nunca se comparte entre usuarios ni entre conversaciones.
-- **Aulas por nombre:** el servidor resuelve el nombre contra el catálogo. Un nombre ambiguo o inexistente pide aclarar; la IA nunca envía IDs.
-- **Sin aula elegida:** el servidor busca la primera aula libre con el horario y el aforo, y la propone.
+- **Aulas por nombre:** el servidor resuelve el nombre contra el catálogo. Alias operativos: Skilab → E03, Spooki → E04, Amarillas verdes → E09, Blanca → E07 y Azul → E08. Solo se resuelven si el ID existe; no se modifican los CSV ficticios. Un nombre ambiguo o inexistente pide aclarar; la IA nunca envía IDs.
+- **Sin aula elegida:** las candidatas ya están filtradas por disponibilidad y aforo. Se ordenan por menor aforo suficiente e ID, dejando E08 al final salvo para Zona Franca, que la prefiere cuando está disponible y alcanza el aforo. Un aula elegida explícitamente y válida se respeta. Esta preferencia conserva el trabajo local autorizado antes del incremento de interfaz; no reubica ni desplaza reservas.
+- **Actividad:** el prompt indica usar actividades como clase de SER, clase de inglés o reunión como motivo si no hay otro más específico. Zona Franca se reconoce por el parámetro booleano de la IA o por su mención en mensaje o descripción; se conserva en el borrador para las reevaluaciones. Esto solo orienta la selección y no cambia permisos.
 - **Datos faltantes:** se pregunta lo que falta, sin inventar personas ni horas.
 - **Confirmación:** crear exige confirmación explícita de la propuesta vigente. Antes de crear, el servidor vuelve a validar estado, aforo y solapamientos dentro de una transacción. Si el aula se ocupó, se propone otra y no se crea nada.
 - **Concurrencia del borrador:** cada cambio guarda una versión interna en el JSON existente, sin migrar tablas. La confirmación comprueba estado y versión dentro de la misma transacción que crea la solicitud. Si cambió, devuelve `propuesta_modificada` y pide revisar la propuesta vigente; si se canceló, devuelve `cancelada`, sin crear. Los borradores anteriores sin versión siguen siendo compatibles.
@@ -111,6 +117,15 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 - La identidad y el rol salen del servidor. La aprobación no es una acción del chat: sigue siendo solo de la coordinadora, por la API.
 - Si la IA no responde, el chat devuelve 503 `ia_no_disponible` y no cambia ningún borrador ni crea nada.
 - La prueba de inferencia real (`PruebaInferenciaReal`) se omite mientras no haya proveedor configurado.
+
+### Recorrido de desarrollo desde el navegador
+
+1. Configurar un proveedor de IA autorizado y una identidad solicitante en el servidor (`USUARIO_DESARROLLO`, `ROL_DESARROLLO`). Abrir Chat, pedir un aula, revisar la propuesta y confirmarla explícitamente.
+2. Consultar la solicitud pendiente en la pestaña Solicitudes.
+3. Para probar el otro rol, detener el servidor y volver a iniciarlo con una identidad **distinta** de coordinadora, conservando la misma base. No hay selector de roles ni usuarios reales por sesión en esta etapa.
+4. Abrir Solicitudes, aprobar y consultar la fecha de la reserva en Grilla. La devolución anticipada se muestra sin reducir el bloque reservado.
+
+La identidad es global al proceso. Este recorrido aún requiere configurar y reiniciar el servidor para cambiar de persona; la autenticación oficial y los datos oficiales siguen pendientes. Sin proveedor configurado, el chat informa IA no disponible y no crea solicitudes.
 
 ## Instalación
 
@@ -150,6 +165,10 @@ node tests/test_interfaz.js
 `test_interfaz.js` requiere Node.js y no usa navegador: simula el DOM y las respuestas de `fetch`.
 
 Validación de la corrección de concurrencia del chat (Windows, Python 3.12.14): 92 pruebas Python, 91 satisfactorias y una omitida por falta de proveedor de IA; 36 comprobaciones de interfaz satisfactorias; sintaxis de `static/app.js` y `pyflakes app tests` sin errores. Las pruebas del chat simulan la IA. Los intercalados se controlan con eventos y barreras, sin esperas temporizadas para ordenar las operaciones: cubren confirmaciones antiguas tras cambiar personas u horario, cancelación en curso, confirmaciones simultáneas de la misma versión y respuestas tardías tras modificar o cancelar.
+
+Validación del incremento de interfaz (Windows, Python 3.12.14, Node 24.17.0): 103 pruebas Python, 102 satisfactorias y una omitida por falta de proveedor; 46 comprobaciones de interfaz con DOM y HTTP simulados. Se conservaron los casos anteriores y se ajustaron dos expectativas: selección automática E07 por aforo y el nuevo campo público `hora_devolucion`. Se verifican permisos por API, rechazo sin cambiar el pendiente, calendario, fechas nuevas, duplicados, pago no verificado y respuesta perdida después de aprobar. La inferencia del chat en estas pruebas es simulada.
+
+Comprobación adicional en navegador real con FastAPI y SQLite temporales: solicitud de prueba precargada, aprobación mediante el botón de coordinadora, estado aprobado, nombre y motivo visibles, nueva fecha en el selector y reserva 06:00–08:00 con devolución 07:55 en la grilla. No verifica interpretación de mensajes por un proveedor real: el entorno sigue sin IA configurada.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
 </content>

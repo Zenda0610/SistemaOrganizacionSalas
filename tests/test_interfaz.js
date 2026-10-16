@@ -8,11 +8,33 @@ const vm = require("vm");
 
 const codigoInterfaz = fs.readFileSync(path.join(__dirname, "..", "static", "app.js"), "utf8");
 
-function crearElemento() {
+function crearElemento(etiqueta = "div") {
   return {
+    etiqueta, children: [], listeners: {}, style: {},
     className: "", textContent: "", disabled: false, options: [], value: "",
-    classList: { toggle() {} }, addEventListener() {}, appendChild() {}, replaceChildren() {},
-    querySelector() { return crearElemento(); }, set onchange(_valor) {},
+    classList: { toggle() {} },
+    addEventListener(nombre, fn) { this.listeners[nombre] = fn; },
+    appendChild(hijo) {
+      this.children.push(hijo);
+      if (this.etiqueta === "select") {
+        this.options.push(hijo);
+        if (!this.value) this.value = hijo.value;
+      }
+      return hijo;
+    },
+    replaceChildren(...hijos) {
+      this.children = [];
+      if (this.etiqueta === "select") { this.options = []; this.value = ""; }
+      hijos.forEach((h) => this.appendChild(h));
+    },
+    querySelector(selector) {
+      for (const hijo of this.children) {
+        if (hijo.etiqueta === selector) return hijo;
+        const encontrado = hijo.querySelector && hijo.querySelector(selector);
+        if (encontrado) return encontrado;
+      }
+      return null;
+    },
   };
 }
 
@@ -29,15 +51,15 @@ function cargarInterfaz(respuestaImportacion) {
   const elementos = {};
   const documento = {
     querySelectorAll: () => [],
-    querySelector: () => crearElemento(),
-    getElementById: (id) => (elementos[id] = elementos[id] || crearElemento()),
-    createElement: () => crearElemento(),
+    querySelector: (selector) => (elementos[selector] = elementos[selector] || crearElemento()),
+    getElementById: (id) => (elementos[id] = elementos[id] || crearElemento(id === "selector-fecha" ? "select" : "div")),
+    createElement: (etiqueta) => crearElemento(etiqueta),
     createDocumentFragment: () => crearElemento(),
   };
   const contexto = {
     document: documento,
     console,
-    Option: function Option() {},
+    Option: function Option(texto, valor) { return { textContent: texto, value: valor }; },
     fetch: async (url, opciones = {}) => {
       if (opciones.method === "POST") {
         contexto.ultimoCuerpo = opciones.body;
@@ -306,6 +328,127 @@ const casos = [
     fallos += 1;
     console.log("FAIL - la sesión muestra usuario de desarrollo y aviso\n     ", error.message.split("\n")[0]);
   }
+  // Panel de solicitudes: DOM con hijos y eventos; las respuestas HTTP siguen siendo simuladas.
+  const pruebaAsync = async (nombre, fn) => {
+    try { await fn(); console.log("ok   -", nombre); }
+    catch (error) { fallos += 1; console.log("FAIL -", nombre, "\n     ", error.stack); }
+  };
+  const textoNodo = (n) => [n.textContent, ...(n.children || []).map(textoNodo)].join(" ");
+  const botonesNodo = (n) => (n.etiqueta === "button" ? [n] : (n.children || []).flatMap(botonesNodo));
+  const escenario = async (rol = "coordinadora", opciones = {}) => {
+    const vista = cargarInterfaz(() => respuestaJson(200, {}));
+    await new Promise(setImmediate);  // terminar las cargas de arranque antes de fijar el escenario
+    const llamadas = [];
+    let aprobada = false;
+    const solicitud = { id: 7, espacio_id: "E07", inicio: "2026-11-02 06:00", fin: "2026-11-02 08:00",
+      hora_devolucion: "2026-11-02 07:55", personas: 8, descripcion: "Clase de SER", tipo: "academica", estado: "pendiente", solicitante_id: "dev-profesor",
+      ...opciones.solicitud };
+    vista.contexto.fetch = async (url, config = {}) => {
+      llamadas.push([url, config.method || "GET"]);
+      if (url === "/api/solicitudes/7/aprobar") {
+        if (opciones.errorTrasAplicar) aprobada = true;
+        if (opciones.error) return opciones.error();
+        aprobada = true;
+        return respuestaJson(200, { ...solicitud, estado: "aprobada" });
+      }
+      if (url === "/api/solicitudes") {
+        if (aprobada && opciones.errorRefresco) throw new TypeError("red caída al refrescar");
+        return respuestaJson(200, [{ ...solicitud, estado: aprobada ? "aprobada" : "pendiente" }]);
+      }
+      if (url === "/api/sesion") return respuestaJson(200, { usuario_id: "dev-prueba", rol });
+      if (url === "/api/espacios") return respuestaJson(200, [{ id: "E07", nombre: "Sala Blanca", aforo: 12 }]);
+      if (url.startsWith("/api/reservas")) return respuestaJson(200, aprobada ? [solicitud] : []);
+      if (url === "/api/chat") return respuestaJson(200, { estado: "solicitud_creada", respuesta: "Solicitud creada", datos: [] });
+      return respuestaJson(200, []);
+    };
+    return { ...vista, llamadas, solicitud };
+  };
+  await pruebaAsync("solicitudes: coordinadora aprueba desde el botón y refresca lista, grilla y fecha nueva", async () => {
+    const vista = await escenario();
+    const selector = vista.contexto.document.getElementById("selector-fecha");
+    selector.appendChild(new vista.contexto.Option("2026-10-01", "2026-10-01"));
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    const boton = botonesNodo(vista.elementos["solicitudes-registradas"])[0];
+    assert.strictEqual(boton.textContent, "Aprobar");
+    const primera = boton.listeners.click();
+    await boton.listeners.click(); // un segundo clic en curso no repite el POST
+    await primera;
+    assert.strictEqual(vista.llamadas.filter(([url]) => url.endsWith("/aprobar")).length, 1);
+    assert.match(vista.elementos["resultado-solicitudes"].textContent, /Solicitud 7 aprobada/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /aprobada/);
+    assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
+    assert.strictEqual(selector.value, "2026-11-02");
+    assert.ok(selector.options.some((o) => o.value === "2026-11-02"));
+    assert.strictEqual(vista.elementos["#grilla .estado"].className, "estado estado-ok");
+    assert.match(textoNodo(vista.elementos["reservas-aprobadas"]), /Devolución/);
+    assert.match(textoNodo(vista.elementos["reservas-aprobadas"]), /2026-11-02 07:55/);
+  });
+  await pruebaAsync("solicitudes: tabla muestra hora_devolucion y profesor no tiene botón Aprobar", async () => {
+    const vista = await escenario("profesor");
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Devolución anticipada/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /2026-11-02 07:55/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Sala Blanca/);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Clase de SER/);
+    assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
+  });
+  await pruebaAsync("solicitudes: comercial indica pago pendiente sin verificar", async () => {
+    const vista = await escenario("estudiante", { solicitud: { tipo: "comercial", requiere_pago: true, estado_pago: "pendiente" } });
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /Comercial · Pago pendiente \(no verificado por el sistema\)/);
+    assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
+  });
+  await pruebaAsync("solicitudes: rechazo confirmado se muestra y no afirma aprobación", async () => {
+    const vista = await escenario("coordinadora", { error: () => respuestaJson(409, { codigo: "solapamiento", mensaje: "Aula ocupada" }) });
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    const boton = botonesNodo(vista.elementos["solicitudes-registradas"])[0];
+    await boton.listeners.click();
+    assert.match(vista.elementos["resultado-solicitudes"].textContent, /No se aprobó.*solapamiento/);
+    assert.strictEqual(boton.disabled, false);
+  });
+  for (const [nombre, error] of [["red", () => { throw new TypeError("red caída"); }],
+    ["500", () => respuestaJson(500, { codigo: "error_interno_servidor" })],
+    ["contrato 200 inválido", () => respuestaJson(200, {})]]) {
+    await pruebaAsync(`solicitudes: fallo de ${nombre} indica resultado desconocido`, async () => {
+      const vista = await escenario("coordinadora", { error });
+      await vm.runInContext("cargarSolicitudes()", vista.contexto);
+      const boton = botonesNodo(vista.elementos["solicitudes-registradas"])[0];
+      await boton.listeners.click();
+      assert.match(vista.elementos["resultado-solicitudes"].textContent, /No se pudo confirmar/);
+      assert.doesNotMatch(vista.elementos["resultado-solicitudes"].textContent, /No se aprobó/);
+      assert.strictEqual(boton.disabled, true);
+      await vm.runInContext("cargarSolicitudes()", vista.contexto);
+      assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"])[0].disabled, false);
+    });
+  }
+  await pruebaAsync("solicitudes: consultar tras perder la respuesta recupera aprobación sin repetir el POST", async () => {
+    const vista = await escenario("coordinadora", { errorTrasAplicar: true, error: () => { throw new TypeError("se perdió la respuesta"); } });
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    await botonesNodo(vista.elementos["solicitudes-registradas"])[0].listeners.click();
+    assert.match(vista.elementos["resultado-solicitudes"].textContent, /No se pudo confirmar/);
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    assert.match(textoNodo(vista.elementos["solicitudes-registradas"]), /aprobada/);
+    assert.strictEqual(botonesNodo(vista.elementos["solicitudes-registradas"]).length, 0);
+    assert.strictEqual(vista.llamadas.filter(([url]) => url.endsWith("/aprobar")).length, 1);
+  });
+  await pruebaAsync("solicitudes: fallo de refresco conserva la confirmación de aprobación", async () => {
+    const vista = await escenario("coordinadora", { errorRefresco: true });
+    await vm.runInContext("cargarSolicitudes()", vista.contexto);
+    await botonesNodo(vista.elementos["solicitudes-registradas"])[0].listeners.click();
+    assert.match(vista.elementos["resultado-solicitudes"].textContent, /Solicitud 7 aprobada.*No se pudo actualizar/);
+  });
+  await pruebaAsync("solicitudes: se actualizan al abrir la pestaña repetidamente y tras enviar mensaje", async () => {
+    const vista = await escenario();
+    for (let i = 0; i < 2; i += 1) {
+      vm.runInContext('activarPestana("solicitudes")', vista.contexto);
+      await new Promise(setImmediate);
+    }
+    assert.strictEqual(vista.llamadas.filter(([url]) => url === "/api/solicitudes").length, 2);
+    vista.contexto.document.getElementById("entrada-chat").value = "Una clase";
+    await vm.runInContext("enviarChat({ preventDefault() {} })", vista.contexto);
+    assert.strictEqual(vista.llamadas.filter(([url]) => url === "/api/solicitudes").length, 3);
+    assert.strictEqual(vista.elementos["respuesta-chat"].textContent, "Solicitud creada");
+  });
   console.log(fallos === 0 ? "Todas las pruebas de interfaz pasaron." : `${fallos} prueba(s) fallaron.`);
   process.exit(fallos === 0 ? 0 : 1);
 })();

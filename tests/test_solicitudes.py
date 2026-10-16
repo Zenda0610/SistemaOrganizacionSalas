@@ -5,10 +5,11 @@ La identidad de cada prueba sale de la configuración del servidor (identidad de
 import threading
 import unittest
 from datetime import datetime
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from app import carga_datos, db, solicitudes
+from app import carga_datos, config, db, reglas, solicitudes
 from app.identidad import Identidad
 from app.main import app
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
@@ -183,6 +184,26 @@ class PruebasPermisos(BaseSolicitudes):
 
 
 class PruebasAprobacion(BaseSolicitudes):
+    def test_rechazo_por_aforo_aula_inactiva_o_solapamiento_conserva_pendiente(self):
+        for motivo, espacio in (("aforo_excedido", "E02"), ("espacio_no_disponible", "E03"),
+                                ("solapamiento", "E07")):
+            with self.subTest(motivo=motivo):
+                creada = self.solicitar("profesor", espacio=espacio, personas=8).json()
+                if motivo == "aforo_excedido":
+                    self.cambiar_aforo(espacio, 5)
+                elif motivo == "espacio_no_disponible":
+                    self.cambiar_estado_espacio(espacio, "mantenimiento")
+                else:
+                    self.assertEqual(self.aprobar_nueva("2026-11-02T08:00", "2026-11-02T09:00",
+                                                       espacio=espacio, personas=8).status_code, 200)
+                respuesta = self.aprobar(creada["id"])
+                self.assertEqual(respuesta.status_code, 409)
+                self.assertEqual(respuesta.json()["codigo"], motivo)
+                fila = solicitudes.obtener_solicitud(creada["id"])
+                self.assertEqual(fila["estado"], "pendiente")
+                self.assertIsNone(fila["decidida_por"])
+                self.assertNotIn(creada["id"], [r["id"] for r in solicitudes.listar_reservas(None)])
+
     def test_aforo_se_revalida_al_aprobar(self):
         # E02 tiene aforo 25. La solicitud se crea con 20 personas y el aforo baja antes de aprobar.
         creada = self.solicitar("profesor", espacio="E02", personas=20).json()
@@ -255,7 +276,7 @@ class PruebasCalendario(BaseSolicitudes):
         self.aprobar_nueva("2026-11-02T08:00", "2026-11-02T09:00")
         with TestClient(app) as cliente:
             reserva = cliente.get("/api/reservas").json()[0]
-        self.assertEqual(set(reserva), {"id", "espacio_id", "inicio", "fin", "tipo", "estado_pago"})
+        self.assertEqual(set(reserva), {"id", "espacio_id", "inicio", "fin", "tipo", "estado_pago", "hora_devolucion"})
 
     def test_reserva_de_varios_dias_aparece_en_cada_dia_que_ocupa(self):
         self.aprobar_nueva("2026-11-02T20:00", "2026-11-05T06:00")
@@ -274,6 +295,39 @@ class PruebasCalendario(BaseSolicitudes):
         self.aprobar_nueva("2026-11-02T08:00", "2026-11-02T09:00")
         self.assertTrue(carga_datos.cargar_datos()["ok"])
         self.assertEqual(len(solicitudes.listar_reservas(None)), 1)
+
+
+class PruebasReglas(BaseSolicitudes):
+    def test_devolucion_no_libera_antes_del_fin_y_permite_reserva_consecutiva(self):
+        with mock.patch.object(config, "MINUTOS_DEVOLUCION_ANTICIPADA", 5):
+            creada = self.solicitar("profesor", inicio="2026-11-02T06:00", fin="2026-11-02T08:00").json()
+            self.assertEqual(creada["hora_devolucion"], "2026-11-02 07:55")
+            aprobada = self.aprobar(creada["id"]).json()
+            self.assertEqual(aprobada["hora_devolucion"], creada["hora_devolucion"])
+            listado = self.api("coordinadora", "get", "/api/solicitudes").json()
+            self.assertEqual(listado[0]["hora_devolucion"], creada["hora_devolucion"])
+            self.assertEqual(solicitudes.listar_reservas(None)[0]["hora_devolucion"], creada["hora_devolucion"])
+            with db.transaccion() as con:
+                self.assertTrue(solicitudes.buscar_conflictos(con, "E01", "2026-11-02 07:55", "2026-11-02 08:00"))
+            ocupada = self.solicitar("profesor", inicio="2026-11-02T07:45", fin="2026-11-02T08:15").json()
+            self.assertEqual(self.aprobar(ocupada["id"]).json()["codigo"], "solapamiento")
+            self.assertEqual(self.aprobar_nueva("2026-11-02T08:00", "2026-11-02T09:00").status_code, 200)
+
+    def test_devolucion_cruza_dia_y_respeta_configuracion(self):
+        with mock.patch.object(config, "MINUTOS_DEVOLUCION_ANTICIPADA", 5):
+            self.assertEqual(reglas.hora_devolucion("2026-11-03 00:00"), "2026-11-02 23:55")
+        with mock.patch.object(config, "MINUTOS_DEVOLUCION_ANTICIPADA", 10):
+            self.assertEqual(reglas.hora_devolucion("2026-11-03 00:00"), "2026-11-02 23:50")
+
+    def test_orden_de_candidatos_es_estable_por_aforo_e_id_sin_mutar_entrada(self):
+        candidatos = [{"id": "E08", "aforo": 10}, {"id": "E03", "aforo": 20},
+                      {"id": "E02", "aforo": 20}, {"id": "E07", "aforo": 12}]
+        original = [dict(c) for c in candidatos]
+        self.assertEqual([c["id"] for c in reglas.ordenar_candidatos(candidatos)], ["E07", "E02", "E03", "E08"])
+        self.assertEqual([c["id"] for c in reglas.ordenar_candidatos(candidatos, True)], ["E08", "E07", "E02", "E03"])
+        self.assertEqual(candidatos, original)
+        self.assertEqual(reglas.ordenar_candidatos([]), [])
+        self.assertEqual(reglas.ordenar_candidatos([candidatos[0]]), [candidatos[0]])
 
 
 if __name__ == "__main__":

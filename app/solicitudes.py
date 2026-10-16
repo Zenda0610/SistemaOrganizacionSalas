@@ -12,7 +12,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app import config, db
+from app import config, db, reglas
 from app.identidad import Identidad
 from app.permisos import tipo_solicitud_para
 
@@ -100,6 +100,7 @@ def _solicitud(solicitud_id: int) -> dict:
     filas = db.consultar(f"SELECT {CAMPOS_SOLICITUD} FROM solicitudes WHERE id = ?", (solicitud_id,))
     fila = filas[0]
     fila["requiere_pago"] = bool(fila["requiere_pago"])
+    fila["hora_devolucion"] = reglas.hora_devolucion(fila["fin"])
     return fila
 
 
@@ -172,6 +173,7 @@ def listar_solicitudes(identidad: Identidad) -> list[dict]:
         )
     for fila in filas:
         fila["requiere_pago"] = bool(fila["requiere_pago"])
+        fila["hora_devolucion"] = reglas.hora_devolucion(fila["fin"])
     return filas
 
 
@@ -204,4 +206,6 @@ def listar_reservas(fecha: Optional[date]) -> list[dict]:
             "WHERE estado = 'aprobada' AND inicio < ? AND ? < fin ORDER BY inicio, espacio_id",
             (_texto(siguiente), _texto(dia)),
         )
+    for fila in filas:
+        fila["hora_devolucion"] = reglas.hora_devolucion(fila["fin"])
     return filas

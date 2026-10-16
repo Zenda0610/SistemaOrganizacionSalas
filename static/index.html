@@ -19,6 +19,7 @@
     <button class="pestana" data-pestana="cohortes" role="tab">Cohortes</button>
     <button class="pestana" data-pestana="calidad" role="tab">Calidad de datos</button>
     <button class="pestana" data-pestana="chat" role="tab">Chat de solicitudes</button>
+    <button class="pestana" data-pestana="solicitudes" role="tab">Solicitudes</button>
   </nav>
 
   <main>
@@ -62,6 +63,13 @@
       </form>
       <p id="respuesta-chat" class="resultado" role="status"></p>
       <div id="datos-chat" class="contenido"></div>
+    </section>
+    <section id="solicitudes" class="panel">
+      <h2 class="subtitulo">Solicitudes registradas</h2>
+      <p>Solo la coordinadora puede aprobar solicitudes pendientes. La identidad de desarrollo se configura en el servidor.</p>
+      <button id="boton-actualizar-solicitudes" type="button">Actualizar solicitudes</button>
+      <p id="resultado-solicitudes" class="resultado" role="status"></p>
+      <div id="solicitudes-registradas" class="tabla-scroll"></div>
     </section>
   </main>
 

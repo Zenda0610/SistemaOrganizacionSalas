@@ -155,7 +155,7 @@ class PruebasChat(BaseSolicitudes):
         self.solicitar_aula(fecha=FECHA, inicio="08:00", fin="10:00", personas=8, descripcion="Taller",
                             solicitante_id="otro", rol="coordinadora", espacio_id="E02")
         datos = self.solicitar_aula(fecha=FECHA, inicio="08:00", fin="10:00", personas=8, descripcion="Taller").json()
-        self.assertEqual(datos["datos"][0]["espacio_id"], "E01")  # no E02: el ID de la IA no se usa
+        self.assertEqual(datos["datos"][0]["espacio_id"], "E07")  # menor aforo adecuado; el ID de la IA no se usa
         creada = self.confirmar().json()
         self.assertEqual(creada["datos"][0]["solicitante_id"], "dev-profesor")
 
@@ -175,6 +175,76 @@ class PruebasChat(BaseSolicitudes):
         self.assertIn("la fecha", nueva["respuesta"])
 
     # --- Aislamiento y concurrencia --------------------------------------------------
+
+    def test_alias_confirmados_resuelven_ids_existentes(self):
+        catalogo = chat._catalogo()
+        for nombre, esperado in {"Spooki": "E04", "Skilab": "E03", "Amarillas verdes": "E09",
+                                 "Blanca": "E07", "Azul": "E08"}.items():
+            with self.subTest(nombre=nombre):
+                estado, espacio = chat.resolver_espacio(nombre, catalogo)
+                self.assertEqual(estado, "ok")
+                self.assertEqual(espacio["id"], esperado)
+                self.assertEqual(chat.resolver_espacio(nombre, []), ("no_existe", None))
+
+    def test_seleccion_por_aforo_y_preferencia_zona_franca(self):
+        for parametros, esperado in (({"descripcion": "Clase Zona Franca"}, "E08"),
+                                     ({"descripcion": "Clase SER", "es_zona_franca": True}, "E08"),
+                                     ({"descripcion": "Clase SER"}, "E07")):
+            with self.subTest(parametros=parametros):
+                datos = self.solicitar_aula(fecha=FECHA, inicio="08:00", fin="10:00", personas=8,
+                                            **parametros).json()
+                self.assertEqual(datos["datos"][0]["espacio_id"], esperado)
+
+    def test_zona_franca_en_mensaje_se_conserva_al_completar_borrador(self):
+        self.chatear("profesor", ia_json("solicitar_aula", fecha=FECHA, inicio="08:00", fin="10:00",
+                                         descripcion="Clase"), mensaje="Un aula para Zona Franca")
+        datos = self.solicitar_aula(personas=8).json()
+        self.assertEqual(datos["datos"][0]["espacio_id"], "E08")
+
+    def test_preferencia_no_salta_aforo_disponibilidad_ni_aula_explicita(self):
+        for parametros, esperado in (({"personas": 11, "descripcion": "Zona Franca"}, "E07"),
+                                     ({"personas": 8, "descripcion": "SER", "espacio": "Azul"}, "E08"),
+                                     ({"personas": 8, "descripcion": "Zona Franca", "espacio": "Skilab"}, "E03")):
+            with self.subTest(parametros=parametros):
+                datos = self.solicitar_aula(fecha=FECHA, inicio="08:00", fin="10:00", **parametros).json()
+                self.assertEqual(datos["datos"][0]["espacio_id"], esperado)
+        self.aprobar_nueva(f"{FECHA}T08:00", f"{FECHA}T10:00", espacio="E08", personas=8)
+        datos = self.solicitar_aula(conv="conv-zona-ocupada", fecha=FECHA, inicio="08:00", fin="10:00", personas=8,
+                                    descripcion="Zona Franca").json()
+        self.assertEqual(datos["datos"][0]["espacio_id"], "E07")
+
+    def test_reevaluacion_conserva_preferencia_y_exige_otra_confirmacion(self):
+        self.solicitar_aula(fecha=FECHA, inicio="08:00", fin="10:00", personas=8, descripcion="Zona Franca")
+        self.aprobar_nueva(f"{FECHA}T08:00", f"{FECHA}T10:00", espacio="E08", personas=8)
+        datos = self.confirmar().json()
+        self.assertEqual(datos["estado"], "propuesta")
+        self.assertEqual(datos["datos"][0]["espacio_id"], "E07")
+        self.assertEqual(self.solicitudes_contadas(), 1)
+        self.assertTrue(chat._cargar_borrador("dev-profesor", CONV)["datos"]["es_zona_franca"])
+
+    def test_prompt_indica_usar_actividad_como_descripcion_y_reconoce_alias(self):
+        prompt = chat._prompt("Clase de SER en Skilab", {"estado": "vacio", "datos": {}})
+        self.assertIn('úsala como "descripcion"', prompt)
+        self.assertIn("clase de inglés", prompt)
+        self.assertIn("Skilab", prompt)
+        self.assertIn("es_zona_franca", prompt)
+
+    def test_recorrido_chat_confirmacion_aprobacion_y_calendario(self):
+        propuesta = self.solicitar_aula(espacio="Blanca", fecha=FECHA, inicio="06:00", fin="08:00",
+                                        personas=8, descripcion="Clase SER").json()
+        self.assertEqual(propuesta["estado"], "propuesta")
+        creada = self.confirmar().json()
+        self.assertEqual(creada["estado"], "solicitud_creada")
+        solicitud_id = creada["datos"][0]["id"]
+        listado = self.api("profesor", "get", "/api/solicitudes").json()
+        self.assertEqual(listado[0]["estado"], "pendiente")
+        self.assertEqual(self.api("profesor", "post", f"/api/solicitudes/{solicitud_id}/aprobar").status_code, 403)
+        self.assertEqual(self.aprobar(solicitud_id).json()["estado"], "aprobada")
+        reservas = self.api("coordinadora", "get", f"/api/reservas?fecha={FECHA}").json()
+        self.assertEqual([r["id"] for r in reservas], [solicitud_id])
+        self.assertEqual(self.aprobar(solicitud_id).json()["codigo"], "no_pendiente")
+        self.assertEqual(self.solicitudes_contadas(), 1)
+        self.assertEqual(len(self.api("coordinadora", "get", f"/api/reservas?fecha={FECHA}").json()), 1)
 
     def test_un_borrador_no_se_comparte_entre_usuarios(self):
         self.solicitar_aula(espacio="Auditorio", fecha=FECHA, inicio="08:00", fin="10:00",

@@ -10,7 +10,8 @@ const cargadores = {
   espacios: cargarEspacios,
   cohortes: cargarCohortes,
   calidad: cargarCalidad,
-  chat: async () => {},  // el chat no carga datos al abrirse
+  chat: async () => {},
+  solicitudes: cargarSolicitudes,
 };
 const cargadosPorPestana = new Set();
 
@@ -104,7 +105,7 @@ function horaDesdeMinutos(minutos) {
 function activarPestana(nombre) {
   document.querySelectorAll(".pestana").forEach((b) => b.classList.toggle("activa", b.dataset.pestana === nombre));
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("activo", p.id === nombre));
-  if (!cargadosPorPestana.has(nombre) || nombre === "grilla") {
+  if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes") {
     cargadores[nombre]().catch((error) => mostrarEstado(nombre, "error", error.message));
     cargadosPorPestana.add(nombre);
   }
@@ -112,18 +113,23 @@ function activarPestana(nombre) {
 
 // --- Grilla semanal (por día) ---------------------------------------------------
 
-async function cargarGrilla() {
+async function cargarGrilla(fechaPreferida) {
   mostrarEstado("grilla", "cargando", "Cargando grilla…");
   const selector = document.getElementById("selector-fecha");
-  if (!selector.options.length) {
+  const seleccionAnterior = fechaPreferida || selector.value;
+  {
     const [todas, reservas] = await Promise.all([pedir("/sesiones"), pedir("/reservas")]);
     const fechas = [...new Set([...todas.map((s) => s.fecha), ...reservas.flatMap(fechasDeReserva)])].sort();
     if (!fechas.length) {
       mostrarEstado("grilla", "vacio", "No hay sesiones cargadas. Recargue los datos desde la pestaña Calidad de datos.");
       document.getElementById("tabla-grilla").replaceChildren();
+      selector.replaceChildren();
+      document.getElementById("reservas-aprobadas").replaceChildren();
       return;
     }
+    selector.replaceChildren();
     fechas.forEach((f) => selector.appendChild(new Option(f, f)));
+    if (fechas.includes(seleccionAnterior)) selector.value = seleccionAnterior;
     selector.onchange = () => cargarDia(selector.value);
   }
   await cargarDia(selector.value);
@@ -140,8 +146,8 @@ async function cargarDia(fecha) {
   }
   construirGrilla(espacios, sesiones, reservas, fecha);
   pintarReservas(espacios, reservas);
-  mostrarEstado("grilla", sesiones.length ? "ok" : "vacio",
-    sesiones.length ? "" : `No hay sesiones programadas para ${fecha}.`);
+  mostrarEstado("grilla", sesiones.length || reservas.length ? "ok" : "vacio",
+    sesiones.length || reservas.length ? "" : `No hay sesiones ni reservas programadas para ${fecha}.`);
 }
 
 const MINUTOS_DIA = 24 * 60;
@@ -220,7 +226,7 @@ function crearBloque(bloque) {
     const clases = ["bloque", "reserva", r.tipo === "comercial" ? "comercial" : "academica"];
     if (bloque.enConflicto) clases.push("conflicto");
     const elemento = crearElemento("div", clases.join(" "), "Reserva aprobada");
-    elemento.title = `Reserva aprobada · ${r.inicio} → ${r.fin}`;
+    elemento.title = `Reserva aprobada · ${r.inicio} → ${r.fin} · Devolución: ${r.hora_devolucion || ""}`;
     elemento.style.height = `${altura}px`;
     return elemento;
   }
@@ -246,6 +252,7 @@ function pintarReservas(espacios, reservas) {
     { titulo: "Espacio", valor: (r) => nombres[r.espacio_id] || r.espacio_id },
     { titulo: "Desde", valor: (r) => r.inicio },
     { titulo: "Hasta", valor: (r) => r.fin },
+    { titulo: "Devolución (-5 min por defecto)", valor: (r) => r.hora_devolucion },
     { titulo: "Tipo", valor: (r) => (r.tipo === "comercial" ? "Comercial (pago no verificado por el sistema)" : "Académica") },
   ], reservas));
 }
@@ -430,6 +437,96 @@ async function cargarSesion() {
   }
 }
 
+// --- Solicitudes registradas ----------------------------------------------------
+
+let numeroCargaSolicitudes = 0;
+const aprobacionesEnCurso = new Set();
+
+async function cargarSolicitudes() {
+  const carga = ++numeroCargaSolicitudes;
+  const resultado = document.getElementById("resultado-solicitudes");
+  const contenedor = document.getElementById("solicitudes-registradas");
+  resultado.textContent = "Cargando solicitudes…";
+  try {
+    const [filas, sesion, espacios] = await Promise.all([pedir("/solicitudes"), pedir("/sesion"), pedir("/espacios")]);
+    if (carga !== numeroCargaSolicitudes) return;
+    const nombres = Object.fromEntries(espacios.map((e) => [e.id, e.nombre]));
+    const tabla = crearTabla([
+      { titulo: "ID", valor: (f) => f.id },
+      { titulo: "Aula", valor: (f) => nombres[f.espacio_id] || f.espacio_id },
+      { titulo: "Inicio", valor: (f) => f.inicio },
+      { titulo: "Fin", valor: (f) => f.fin },
+      { titulo: "Devolución anticipada", valor: (f) => f.hora_devolucion },
+      { titulo: "Personas", valor: (f) => f.personas },
+      { titulo: "Motivo", valor: (f) => f.descripcion },
+      { titulo: "Estado", valor: (f) => f.estado },
+      { titulo: "Condición", valor: (f) => f.tipo === "comercial"
+        ? `Comercial · Pago ${f.estado_pago || "pendiente"} (no verificado por el sistema)` : "Académica" },
+    ], filas);
+    if (sesion.rol === "coordinadora") {
+      tabla.querySelector("thead").querySelector("tr").appendChild(crearElemento("th", "", "Acción"));
+      const cuerpo = tabla.querySelector("tbody");
+      filas.forEach((fila, indice) => {
+        const celda = crearElemento("td");
+        if (fila.estado === "pendiente" && fila.solicitante_id !== sesion.usuario_id) {
+          const boton = crearElemento("button", "", "Aprobar");
+          boton.type = "button";
+          boton.disabled = aprobacionesEnCurso.has(fila.id);
+          boton.addEventListener("click", () => aprobarSolicitud(fila.id, boton));
+          celda.appendChild(boton);
+        }
+        cuerpo.children[indice].appendChild(celda);
+      });
+    }
+    contenedor.replaceChildren(filas.length ? tabla : crearElemento("p", "estado", "No hay solicitudes registradas."));
+    resultado.className = "resultado estado-ok";
+    resultado.textContent = `${filas.length} solicitud(es) registrada(s).`;
+    return true;
+  } catch (error) {
+    if (carga !== numeroCargaSolicitudes) return;
+    contenedor.replaceChildren();
+    resultado.className = "resultado estado-error";
+    resultado.textContent = `No se pudieron actualizar las solicitudes. ${error.message}`;
+    return false;
+  }
+}
+
+async function aprobarSolicitud(id, boton) {
+  if (boton.disabled || aprobacionesEnCurso.has(id)) return;
+  aprobacionesEnCurso.add(id);
+  boton.disabled = true;
+  const resultado = document.getElementById("resultado-solicitudes");
+  let aprobada;
+  try {
+    aprobada = await pedir(`/solicitudes/${id}/aprobar`, { method: "POST" });
+    if (!aprobada || aprobada.id !== id || aprobada.estado !== "aprobada"
+        || typeof aprobada.inicio !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(aprobada.inicio)) {
+      throw errorResultadoDesconocido("La respuesta no confirma la aprobación.");
+    }
+  } catch (error) {
+    resultado.className = "resultado estado-error";
+    const rechazoConfirmado = ["sin_identidad", "sin_permiso", "autoaprobacion_no_permitida",
+      "solicitud_no_encontrada", "no_pendiente", "espacio_no_disponible", "aforo_excedido", "solapamiento"]
+      .includes(error.codigo);
+    resultado.textContent = rechazoConfirmado
+      ? `No se aprobó la solicitud (${error.codigo}): ${error.message}`
+      : "No se pudo confirmar el resultado de la aprobación. Actualice las solicitudes antes de repetirla.";
+    aprobacionesEnCurso.delete(id);
+    boton.disabled = !rechazoConfirmado; // consultar el estado antes de repetir un resultado desconocido
+    return;
+  }
+  aprobacionesEnCurso.delete(id);
+  try {
+    const [listaActualizada] = await Promise.all([cargarSolicitudes(), cargarGrilla(aprobada.inicio.slice(0, 10))]);
+    if (!listaActualizada) throw new Error("Consulte de nuevo las solicitudes registradas.");
+    resultado.className = "resultado estado-ok";
+    resultado.textContent = `Solicitud ${id} aprobada. Devolución: ${aprobada.hora_devolucion}.`;
+  } catch (error) {
+    resultado.className = "resultado estado-error";
+    resultado.textContent = `Solicitud ${id} aprobada. No se pudo actualizar la vista: ${error.message}`;
+  }
+}
+
 // --- Estado de la IA -----------------------------------------------------------
 
 async function cargarEstadoIA() {
@@ -483,6 +580,8 @@ async function enviarChat(evento) {
     respuesta.className = "resultado estado-error";
     respuesta.textContent = error.message;
     datosPanel.replaceChildren();
+  } finally {
+    await cargarSolicitudes();
   }
 }
 
@@ -494,6 +593,7 @@ document.querySelectorAll(".pestana").forEach((boton) => {
   boton.addEventListener("click", () => activarPestana(boton.dataset.pestana));
 });
 document.getElementById("boton-recargar").addEventListener("click", recargarDatos);
+document.getElementById("boton-actualizar-solicitudes").addEventListener("click", cargarSolicitudes);
 activarPestana("grilla");
 cargarEstadoIA();
 cargarSesion();
