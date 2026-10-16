@@ -99,3 +99,9 @@ class PruebasPanelComercial(BasePrueba):
         self.assertNotIn('E03', tarifas)
         self.assertNotIn('E04', tarifas)
         self.assertGreaterEqual(self.contar('registros_rechazados'), 2)
+
+    def test_api_disponibilidad_muestra_costo_solo_a_comerciales(self):
+        parametros = {'inicio': FRANJA['inicio'], 'fin': FRANJA['fin'], 'personas': 5}
+        aulas = {a['id']: a for a in self.api('empresa', 'get', '/disponibilidad', params=parametros).json()}
+        self.assertEqual(aulas['E02']['costo']['total'], 100000.0)
+        self.assertNotIn('costo', self.api('profesor', 'get', '/disponibilidad', params=parametros).json()[0])

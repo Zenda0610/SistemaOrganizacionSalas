@@ -72,6 +72,9 @@ SQLite  (db.py: esquema, transacciones BEGIN IMMEDIATE)
    categoría, prioridad, área y justificación; la coordinadora revisa y decide si bloquea.
 4. **Asistente de coordinación**: lista de notificaciones calculada desde la base
    (importantes primero) y resumen redactado por la IA, sin ejecutar acciones.
+5. **Área comercial** (roles estudiante y empresa): aulas libres con costo por hora y total
+   estimado en COP calculados por el servidor, pedido con el chat y "Mis solicitudes" con pago
+   pendiente (sin pasarela de pagos).
 
 **Regla central:** un bloqueo confirmado por incidencia saca el aula o el equipo de
 la disponibilidad para nuevas asignaciones, pero conserva y muestra las reservas,
@@ -94,6 +97,9 @@ sesiones y préstamos afectados (no los cancela automáticamente).
 | Equipo no disponible no se presta; sin doble préstamo ni doble devolución | `app/operaciones.py: prestar, devolver`; índice `prestamo_activo_equipo` | Préstamo de equipo libre / segundo préstamo → 409 `equipo_prestado` |
 | Hora ambigua se rechaza; solapamiento y aforo del CSV se cargan y se señalan | `app/carga_datos.py: _validar_sesion, _detectar_conflictos` | 15 sesiones cargadas / 1 rechazo y 2 conflictos |
 | Cada solicitante ve solo sus solicitudes e incidencias; coordinadora ve todas | `app/solicitudes.py: listar_solicitudes`; `app/operaciones.py: listar_incidencias` | Profesor ve las suyas / coordinadora ve todas |
+| Lo comercial solo se crea y aprueba en franjas libres; las actividades de `ACTIVIDADES_PRIORITARIAS` (SER, Zona Franca, inglés, software) están por encima | `app/solicitudes.py: crear_en, aprobar_en, academicas_prioritarias, espacios_disponibles` | Franja libre → 201 / franja con clase de SER → 409 `franja_no_libre` |
+| Académica aprobada bloquea a la comercial pendiente; una comercial aprobada no se desplaza y el cruce se escala | `app/solicitudes.py: aprobar_en, comerciales_aprobadas`; `app/coordinacion.py: resumen` | Aprobar SER → comercial queda `bloqueada_por_academica` / aprobar SER sobre comercial aprobada → 409 `comercial_aprobada` e importante |
+| Costo comercial = tarifa_hora × horas (sin tarifa: Por definir) | `app/reglas.py: costo`; `app/carga_datos.py` (tarifa ≥ 0 o vacía) | Tarifa 50.000 × 2 h = 100.000 COP / tarifa negativa se rechaza en la carga |
 | Notificación importante: pendiente que empieza en < 24 h o ya vencida, incidencia alta/crítica, bloqueo con afectados | `app/coordinacion.py: resumen` | Pendiente de mañana → importante / pendiente en 5 días → necesaria |
 
 ## Uso de IA en la aplicación
@@ -143,6 +149,9 @@ La interfaz oculta lo que el rol no puede usar, pero la verificación real ocurr
 
 ## Datos
 
+`espacios.csv` admite la columna opcional `tarifa_hora` (COP por hora, número ≥ 0). En los datos
+ficticios está vacía a propósito: no se inventan precios, y la interfaz muestra "Por definir".
+
 Todos los datos son **ficticios** (`data/ficticio/`): 9 aulas, 15 sesiones de la
 semana 12–18/10/2026, 3 cohortes y 8 equipos. La carga (`app/carga_datos.py`) valida
 cada fila, guarda rechazos y correcciones con archivo y fila de origen, señala
@@ -184,6 +193,7 @@ Variables del `.env` (plantilla en `.env.example`; **`.env` nunca se sube**):
 | `IA_TIMEOUT_SEGUNDOS` | tiempo máximo de respuesta de la IA |
 | `USUARIO_DESARROLLO`, `ROL_DESARROLLO` | identidad de desarrollo del servidor |
 | `RUTA_BASE_DATOS`, `RUTA_DATOS` | vacías = `gestion_salas.db` y datos por defecto |
+| `ACTIVIDADES_PRIORITARIAS` | actividades por encima de lo comercial (por defecto `zona_franca,ser,ingles,software`) |
 | `MINUTOS_DEVOLUCION_ANTICIPADA`, `PORCENTAJE_AFORO_MAXIMO`, `AULA_PREFERIDA_ZONA_FRANCA` | reglas configurables |
 
 `scripts.cargar_demo` crea `demo.sqlite`, separada de la base operativa. Repetirla no
@@ -191,9 +201,9 @@ duplica equipos, no reactiva los bloqueados y no borra préstamos. Para recargar
 en la base configurada: `python -m app.carga_datos` o `POST /api/datos/recargar` (coordinadora).
 Comprobar la IA: `GET /api/ia/salud` (verifica el catálogo, no la inferencia).
 
-## Demo con dos servidores
+## Demo con tres servidores
 
-Dos terminales en la raíz, sobre la misma base. Cada servidor tiene su identidad;
+Tres terminales en la raíz, sobre la misma base: profesor (8000), coordinadora (8001) y empresa (8002). Cada servidor tiene su identidad;
 el navegador no elige el rol. Las variables de entorno tienen prioridad sobre `.env`.
 
 Windows (PowerShell), profesor y coordinadora:
@@ -210,6 +220,12 @@ $env:USUARIO_DESARROLLO = 'dev-coordinadora'; $env:ROL_DESARROLLO = 'coordinador
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
+```powershell
+$env:RUTA_BASE_DATOS = Join-Path (Get-Location) 'demo.sqlite'
+$env:USUARIO_DESARROLLO = 'empresa01'; $env:ROL_DESARROLLO = 'empresa'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8002
+```
+
 Linux/macOS:
 
 ```bash
@@ -217,9 +233,12 @@ RUTA_BASE_DATOS="$PWD/demo.sqlite" USUARIO_DESARROLLO=dev-profesor ROL_DESARROLL
   .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 RUTA_BASE_DATOS="$PWD/demo.sqlite" USUARIO_DESARROLLO=dev-coordinadora ROL_DESARROLLO=coordinadora \
   .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+RUTA_BASE_DATOS="$PWD/demo.sqlite" USUARIO_DESARROLLO=empresa01 ROL_DESARROLLO=empresa \
+  .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8002
 ```
 
-Abrir http://127.0.0.1:8000 (profesor) y http://127.0.0.1:8001 (coordinadora), no `file:///`.
+Abrir http://127.0.0.1:8000 (profesor), http://127.0.0.1:8001 (coordinadora) y
+http://127.0.0.1:8002 (empresa, pestaña Área comercial), no `file:///`.
 Swagger en `/docs`. Tras editar `.env`, detener con Ctrl+C y volver a iniciar.
 Para ver ocupación, seleccionar 2026-10-16; para nuevas solicitudes, 2026-10-19.
 Guion de la presentación: [docs/sustentacion.md](docs/sustentacion.md).
@@ -227,7 +246,7 @@ Guion de la presentación: [docs/sustentacion.md](docs/sustentacion.md).
 ## Pruebas
 
 ```bash
-python -m unittest discover -s tests -t .   # 160 pruebas
+python -m unittest discover -s tests -t .   # 169 pruebas
 node tests/test_interfaz.js                  # interfaz con DOM/HTTP simulados
 ```
 

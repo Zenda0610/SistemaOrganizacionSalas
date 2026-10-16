@@ -21,6 +21,7 @@
   <nav class="pestanas" role="tablist" aria-label="Secciones" aria-orientation="vertical">
     <button id="tab-grilla" class="pestana activa" data-pestana="grilla" role="tab" aria-controls="grilla" aria-selected="true" tabindex="0"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendario</button>
     <button id="tab-solicitudes" class="pestana" data-pestana="solicitudes" role="tab" aria-controls="solicitudes" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>Solicitudes</button>
+    <button id="tab-comercial" class="pestana" hidden data-pestana="comercial" role="tab" aria-controls="comercial" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v11H4z"/><path d="M9 20v-6h6v6"/></svg>Área comercial</button>
     <button id="tab-espacios" class="pestana" data-pestana="espacios" role="tab" aria-controls="espacios" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5l8-3 8 3v16"/><path d="M9 21v-6h6v6"/></svg>Aulas</button>
     <button id="tab-operaciones" class="pestana" data-pestana="operaciones" role="tab" aria-controls="operaciones" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg>Incidencias y equipos</button>
     <button id="tab-datos" class="pestana" hidden data-pestana="datos" role="tab" aria-controls="datos" aria-selected="false" tabindex="-1"><svg class="icono" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Datos</button>
@@ -104,6 +105,22 @@
         </form>
       </aside>
     </section>
+    <section id="comercial" class="panel" role="tabpanel" aria-labelledby="tab-comercial" hidden>
+      <div class="titulo-seccion"><div><h2>Área comercial</h2><p>Alquiler de aulas en franjas libres · costo calculado por el servidor</p></div><button id="actualizar-comercial" type="button">Actualizar</button></div>
+      <p class="ayuda">Las actividades académicas (SER, Zona Franca, inglés y software) tienen prioridad: solo se ofrecen franjas libres. El pago queda pendiente; el sistema no cobra.</p>
+      <p class="estado" role="status" aria-live="polite"></p>
+      <form id="form-disponibilidad-comercial" class="formulario-fila">
+        <label>Fecha <input id="fecha-comercial" type="date" required></label>
+        <label>Inicio <input id="inicio-comercial" type="time" step="900" required value="14:00"></label>
+        <label>Fin <input id="fin-comercial" type="time" step="900" required value="16:00"></label>
+        <label>Personas <input id="personas-comercial" type="number" min="1" required value="10"></label>
+        <button type="submit">Ver aulas libres</button>
+      </form>
+      <p id="resultado-comercial" class="resultado" role="status"></p>
+      <div id="aulas-comerciales" class="tarjetas-grilla"></div>
+      <h3>Mis solicitudes</h3>
+      <div id="mis-solicitudes-comerciales" class="tabla-scroll"></div>
+    </section>
     <section id="espacios" class="panel" role="tabpanel" aria-labelledby="tab-espacios" hidden>
       <h2>Catálogo de aulas</h2><p class="estado" aria-live="polite"></p><div class="contenido"></div>
     </section>
@@ -121,5 +138,6 @@
   <script src="/app.js"></script>
   <script src="/operaciones.js"></script>
   <script src="/coordinacion.js"></script>
+  <script src="/comercial.js"></script>
 </body>
 </html>

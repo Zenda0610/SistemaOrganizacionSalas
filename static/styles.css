@@ -344,3 +344,19 @@ footer { color: var(--texto-tenue); font-size: 0.72rem; padding: var(--e6) 0; }
   .perfil { width: 100%; justify-content: space-between; }
   .insignia { max-width: 60vw; }
 }
+
+/* --- Área comercial -------------------------------------------------------------- */
+.formulario-fila { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--e3); padding: var(--e4); margin: var(--e4) 0; border-radius: var(--r-md); background: var(--superficie-2); }
+.formulario-fila label { display: flex; flex-direction: column; gap: var(--e1); font-size: var(--t-pequeno); color: var(--texto-suave); }
+.formulario-fila input { width: 160px; max-width: 100%; }
+.tarjetas-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--e3); margin-bottom: var(--e6); }
+.tarjetas-grilla:empty { display: none; }
+.tarjeta-aula { margin-top: 0; display: flex; flex-direction: column; gap: var(--e1); }
+.tarjeta-aula .precio { color: var(--ok); font-weight: 600; font-size: var(--t-texto); }
+.tarjeta-aula button { margin-top: var(--e2); align-self: flex-start; }
+#comercial h3 { margin-top: var(--e6); }
+@media (max-width: 767px) {
+  .formulario-fila > * { flex: 1 1 100%; }
+  .formulario-fila input { width: 100%; }
+  .tarjeta-aula button { align-self: stretch; }
+}

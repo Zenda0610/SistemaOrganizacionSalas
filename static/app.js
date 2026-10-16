@@ -121,7 +121,7 @@ function activarPestana(nombre) {
     p.classList.toggle("activo", p.id === nombre);
     p.hidden = p.id !== nombre;
   });
-  if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes" || nombre === "operaciones") {
+  if (!cargadosPorPestana.has(nombre) || nombre === "grilla" || nombre === "solicitudes" || nombre === "operaciones" || nombre === "comercial") {
     cargadores[nombre]().catch((error) => mostrarEstado(nombre, "error", error.message));
     cargadosPorPestana.add(nombre);
   }

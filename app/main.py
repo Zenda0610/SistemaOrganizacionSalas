@@ -17,7 +17,7 @@ from app import carga_datos, coordinacion, db, ia, reubicaciones, operaciones
 from app.identidad import ErrorAcceso, identidad_actual
 from app.modelos import TIPOS_SESION, Cohorte
 from app import chat as chat_solicitudes, solicitudes
-from app.permisos import requerir_permiso
+from app.permisos import requerir_permiso, tiene_permiso
 from app.identidad import Identidad
 from app.solicitudes import ErrorSolicitud, NuevaSolicitud
 
@@ -162,7 +162,11 @@ def consultar_disponibilidad(
     inicio: datetime, fin: datetime, personas: Optional[int] = Query(default=None, ge=1)
 ) -> list[dict]:
     solicitudes.comprobar_intervalo(inicio, fin)
-    return solicitudes.espacios_disponibles(inicio, fin, personas)
+    try:  # Consulta pública; con identidad comercial solo muestra franjas libres y su costo.
+        comercial = tiene_permiso(identidad_actual().rol, "solicitar_alquiler_comercial")
+    except ErrorAcceso:
+        comercial = False
+    return solicitudes.espacios_disponibles(inicio, fin, personas, comercial=comercial)
 
 
 @app.get("/api/reservas")
