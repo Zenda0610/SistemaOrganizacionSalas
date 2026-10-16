@@ -14,6 +14,7 @@ import logging
 import re
 import unicodedata
 from datetime import date, datetime, time, timedelta
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,8 +37,10 @@ class ErrorChat(Exception):
         self.mensaje = mensaje
 
 
-class _YaCreada(Exception):
-    pass
+class _BorradorCambiado(Exception):
+    def __init__(self, actual: dict):
+        super().__init__("El borrador cambió durante la petición")
+        self.actual = actual
 
 
 class _Revisar(Exception):
@@ -129,24 +132,50 @@ def _texto(valor, maximo: int, minimo: int = 1):
 
 # --- Borradores -----------------------------------------------------------------------
 
-def _cargar_borrador(usuario_id: str, conversacion_id: str) -> dict:
-    filas = db.consultar(
-        "SELECT estado, datos FROM borradores_chat WHERE usuario_id = ? AND conversacion_id = ?",
-        (usuario_id, conversacion_id),
-    )
+def _cargar_borrador(usuario_id: str, conversacion_id: str, con=None) -> dict:
+    sql = "SELECT estado, datos FROM borradores_chat WHERE usuario_id = ? AND conversacion_id = ?"
+    parametros = (usuario_id, conversacion_id)
+    filas = con.execute(sql, parametros).fetchall() if con is not None else db.consultar(sql, parametros)
     if not filas:
-        return {"estado": "vacio", "datos": {}}
-    return {"estado": filas[0]["estado"], "datos": json.loads(filas[0]["datos"])}
+        return {"estado": "vacio", "datos": {}, "version": None}
+    datos = json.loads(filas[0]["datos"])
+    # Los borradores anteriores a esta corrección usan su JSON como versión inicial.
+    version = datos.pop("_version", filas[0]["datos"])
+    return {"estado": filas[0]["estado"], "datos": datos, "version": version}
 
 
-def _guardar_borrador(usuario_id: str, conversacion_id: str, estado: str, datos: dict) -> None:
+def _comprobar_version(con, usuario_id: str, conversacion_id: str, esperado: dict) -> dict:
+    actual = _cargar_borrador(usuario_id, conversacion_id, con)
+    if (actual["estado"], actual["version"]) != (esperado["estado"], esperado["version"]):
+        raise _BorradorCambiado(actual)
+    return actual
+
+
+def _serializar_borrador(datos: dict) -> str:
+    # Una versión nueva incluso si los datos vuelven a valores anteriores (evita ABA).
+    return json.dumps({**datos, "_version": uuid4().hex}, ensure_ascii=False)
+
+
+def _guardar_borrador(usuario_id: str, conversacion_id: str, estado: str, datos: dict,
+                      esperado: dict) -> None:
     with db.transaccion() as con:
+        _comprobar_version(con, usuario_id, conversacion_id, esperado)
         con.execute(
             "INSERT INTO borradores_chat (usuario_id, conversacion_id, estado, datos) VALUES (?, ?, ?, ?) "
             "ON CONFLICT (usuario_id, conversacion_id) DO UPDATE SET "
             "estado = excluded.estado, datos = excluded.datos, actualizado_en = datetime('now', 'localtime')",
-            (usuario_id, conversacion_id, estado, json.dumps(datos, ensure_ascii=False)),
+            (usuario_id, conversacion_id, estado, _serializar_borrador(datos)),
         )
+
+
+def _respuesta_vigente(actual: dict) -> dict:
+    if actual["estado"] == "creada" and actual["datos"].get("solicitud_id") is not None:
+        return _respuesta("ya_creada", f"Ya existe la solicitud {actual['datos']['solicitud_id']} para esta "
+                                       "conversación. No se creó otra.")
+    if actual["estado"] == "cancelado":
+        return _respuesta("cancelada", "El borrador fue cancelado. No se creó ninguna solicitud con esta petición.")
+    return _respuesta("propuesta_modificada", "El borrador cambió durante la petición. "
+                      "Revise la propuesta vigente antes de confirmar; esta petición no creó ninguna solicitud.")
 
 
 def _fmt(momento: datetime) -> str:
@@ -185,7 +214,7 @@ def _motivo_no_disponible(espacio_id: str, ini: datetime, fin: datetime, persona
     return f"{espacio['nombre']} está ocupada en ese horario"
 
 
-def _evaluar(usuario_id: str, conversacion_id: str, datos: dict) -> dict:
+def _evaluar(usuario_id: str, conversacion_id: str, datos: dict, esperado: dict) -> dict:
     faltan = []
     if not datos.get("fecha"):
         faltan.append("la fecha")
@@ -196,7 +225,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict) -> dict:
     if not datos.get("descripcion"):
         faltan.append("el motivo de la solicitud")
     if faltan:
-        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos)
+        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos, esperado)
         return _respuesta("faltan_datos", f"Para continuar necesito: {', '.join(faltan)}.")
 
     try:
@@ -205,7 +234,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict) -> dict:
     except ValueError as error:
         datos.pop("inicio", None)
         datos.pop("fin", None)
-        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos)
+        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos, esperado)
         return _respuesta("faltan_datos", f"El horario no es válido: {error} Indique de nuevo la hora de inicio y de fin.")
 
     personas = datos["personas"]
@@ -220,7 +249,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict) -> dict:
     if elegido is None and candidatos:
         elegido = candidatos[0]
     if elegido is None:
-        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos)
+        _guardar_borrador(usuario_id, conversacion_id, "en_curso", datos, esperado)
         texto = "No hay aulas libres con ese horario y aforo. Indique otro horario o menos personas."
         if motivo:
             texto = f"{motivo}. {texto}"
@@ -233,7 +262,7 @@ def _evaluar(usuario_id: str, conversacion_id: str, datos: dict) -> dict:
         intro = f"Propuesta: {elegido['nombre']}."
     else:
         intro = f"Aula propuesta: {elegido['nombre']} ({len(candidatos)} libre(s) con ese horario y aforo)."
-    _guardar_borrador(usuario_id, conversacion_id, "propuesta", datos)
+    _guardar_borrador(usuario_id, conversacion_id, "propuesta", datos, esperado)
     resumen = {"espacio_id": elegido["id"], "nombre": elegido["nombre"], "fecha": datos["fecha"],
                "inicio": datos["inicio"], "fin": datos["fin"], "personas": personas,
                "descripcion": datos["descripcion"]}
@@ -272,33 +301,28 @@ def _solicitar(identidad: Identidad, conversacion_id: str, borrador: dict, param
             datos["espacio_id"] = resultado["id"]
         else:
             datos.pop("espacio_id", None)
-            _guardar_borrador(identidad.usuario_id, conversacion_id, "en_curso", datos)
+            _guardar_borrador(identidad.usuario_id, conversacion_id, "en_curso", datos, borrador)
             if estado == "ambiguo":
                 return _respuesta("aclarar_espacio",
                                   "Hay más de un aula con ese nombre: " + ", ".join(resultado) + ". ¿Cuál quiere?")
             return _respuesta("aclarar_espacio",
                               "No encuentro un aula con ese nombre. Aulas disponibles: "
                               + ", ".join(e["nombre"] for e in _catalogo()) + ".")
-    return _evaluar(identidad.usuario_id, conversacion_id, datos)
+    return _evaluar(identidad.usuario_id, conversacion_id, datos, borrador)
 
 
 def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> dict:
     usuario = identidad.usuario_id
-    if borrador["estado"] == "creada":
-        return _respuesta("ya_creada", f"Ya existe la solicitud {borrador['datos']['solicitud_id']} para esta "
-                                       "conversación. No se creó otra.")
-    if borrador["estado"] != "propuesta":
-        return _respuesta("sin_propuesta", "No hay una propuesta pendiente de confirmar. Describa la solicitud.")
-    tipo_solicitud_para(identidad.rol)
-    datos = dict(borrador["datos"])
-    ini, fin = _intervalo(datos)
     try:
         with db.transaccion() as con:
-            cambio = con.execute(
-                "UPDATE borradores_chat SET estado = 'creada' WHERE usuario_id = ? AND conversacion_id = ? "
-                "AND estado = 'propuesta'", (usuario, conversacion_id))
-            if cambio.rowcount != 1:
-                raise _YaCreada()
+            actual = _comprobar_version(con, usuario, conversacion_id, borrador)
+            if actual["estado"] in ("creada", "cancelado"):
+                return _respuesta_vigente(actual)
+            if actual["estado"] != "propuesta":
+                return _respuesta("sin_propuesta", "No hay una propuesta pendiente de confirmar. Describa la solicitud.")
+            tipo_solicitud_para(identidad.rol)
+            datos = dict(actual["datos"])
+            ini, fin = _intervalo(datos)
             espacio = con.execute("SELECT * FROM espacios WHERE id = ?", (datos["propuesta_id"],)).fetchone()
             if espacio is None or espacio["estado"] != "activo":
                 raise _Revisar("el aula ya no está disponible")
@@ -310,17 +334,19 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
                 espacio_id=espacio["id"], inicio=ini, fin=fin, personas=datos["personas"],
                 descripcion=datos["descripcion"]))
             datos["solicitud_id"] = nuevo_id
-            con.execute("UPDATE borradores_chat SET datos = ?, actualizado_en = datetime('now', 'localtime') "
+            con.execute("UPDATE borradores_chat SET estado = 'creada', datos = ?, "
+                        "actualizado_en = datetime('now', 'localtime') "
                         "WHERE usuario_id = ? AND conversacion_id = ?",
-                        (json.dumps(datos, ensure_ascii=False), usuario, conversacion_id))
-    except _YaCreada:
-        actual = _cargar_borrador(usuario, conversacion_id)
-        return _respuesta("ya_creada", f"Ya existe la solicitud {actual['datos']['solicitud_id']} para esta "
-                                       "conversación. No se creó otra.")
+                        (_serializar_borrador(datos), usuario, conversacion_id))
+    except _BorradorCambiado as error:
+        return _respuesta_vigente(error.actual)
     except (_Revisar, ErrorSolicitud) as error:
         motivo = error.motivo if isinstance(error, _Revisar) else error.mensaje
         datos.pop("propuesta_id", None)
-        nueva = _evaluar(usuario, conversacion_id, datos)
+        try:
+            nueva = _evaluar(usuario, conversacion_id, datos, borrador)
+        except _BorradorCambiado as cambio:
+            return _respuesta_vigente(cambio.actual)
         return _respuesta(nueva["estado"],
                           f"La propuesta ya no es válida: {motivo}. Revise la nueva propuesta. "
                           + nueva["respuesta"], nueva["datos"])
@@ -334,7 +360,7 @@ def _confirmar(identidad: Identidad, conversacion_id: str, borrador: dict) -> di
 def _cancelar(identidad: Identidad, conversacion_id: str, borrador: dict) -> dict:
     if borrador["estado"] in ("vacio", "creada", "cancelado"):
         return _respuesta("sin_propuesta", "No hay una solicitud en curso que cancelar.")
-    _guardar_borrador(identidad.usuario_id, conversacion_id, "cancelado", borrador["datos"])
+    _guardar_borrador(identidad.usuario_id, conversacion_id, "cancelado", borrador["datos"], borrador)
     return _respuesta("cancelada", "La solicitud en curso se canceló. No se creó nada.")
 
 
@@ -393,12 +419,15 @@ def procesar(identidad: Identidad, mensaje: str, conversacion_id: str) -> dict:
         return _no_entendido()
     accion = propuesta.get("accion")
     parametros = propuesta.get("parametros", {})
-    if accion == "solicitar_aula":
-        return _solicitar(identidad, conversacion_id, borrador, parametros)
-    if accion == "confirmar":
-        return _confirmar(identidad, conversacion_id, borrador)
-    if accion == "cancelar":
-        return _cancelar(identidad, conversacion_id, borrador)
+    try:
+        if accion == "solicitar_aula":
+            return _solicitar(identidad, conversacion_id, borrador, parametros)
+        if accion == "confirmar":
+            return _confirmar(identidad, conversacion_id, borrador)
+        if accion == "cancelar":
+            return _cancelar(identidad, conversacion_id, borrador)
+    except _BorradorCambiado as error:
+        return _respuesta_vigente(error.actual)
     if accion == "consultar_disponibilidad":
         return _disponibilidad(parametros)
     if accion == "ver_solicitudes":

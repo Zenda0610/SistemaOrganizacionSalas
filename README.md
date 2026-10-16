@@ -105,6 +105,8 @@ Pendiente de definir: qué lecturas requieren identidad, y si la coordinadora pu
 - **Sin aula elegida:** el servidor busca la primera aula libre con el horario y el aforo, y la propone.
 - **Datos faltantes:** se pregunta lo que falta, sin inventar personas ni horas.
 - **Confirmación:** crear exige confirmación explícita de la propuesta vigente. Antes de crear, el servidor vuelve a validar estado, aforo y solapamientos dentro de una transacción. Si el aula se ocupó, se propone otra y no se crea nada.
+- **Concurrencia del borrador:** cada cambio guarda una versión interna en el JSON existente, sin migrar tablas. La confirmación comprueba estado y versión dentro de la misma transacción que crea la solicitud. Si cambió, devuelve `propuesta_modificada` y pide revisar la propuesta vigente; si se canceló, devuelve `cancelada`, sin crear. Los borradores anteriores sin versión siguen siendo compatibles.
+- Las respuestas tardías de IA y las reevaluaciones tras un conflicto no pueden sobrescribir cambios posteriores ni reactivar un borrador cancelado. Esto también protege dos peticiones que comenzaron sin borrador.
 - **Sin duplicados:** una segunda confirmación devuelve `ya_creada`. Las confirmaciones simultáneas crean una sola solicitud.
 - La identidad y el rol salen del servidor. La aprobación no es una acción del chat: sigue siendo solo de la coordinadora, por la API.
 - Si la IA no responde, el chat devuelve 503 `ia_no_disponible` y no cambia ningún borrador ni crea nada.
@@ -146,6 +148,8 @@ node tests/test_interfaz.js
 ```
 
 `test_interfaz.js` requiere Node.js y no usa navegador: simula el DOM y las respuestas de `fetch`.
+
+Validación de la corrección de concurrencia del chat (Windows, Python 3.12.14): 92 pruebas Python, 91 satisfactorias y una omitida por falta de proveedor de IA; 36 comprobaciones de interfaz satisfactorias; sintaxis de `static/app.js` y `pyflakes app tests` sin errores. Las pruebas del chat simulan la IA. Los intercalados se controlan con eventos y barreras, sin esperas temporizadas para ordenar las operaciones: cubren confirmaciones antiguas tras cambiar personas u horario, cancelación en curso, confirmaciones simultáneas de la misma versión y respuestas tardías tras modificar o cancelar.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
 </content>
