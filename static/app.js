@@ -15,24 +15,39 @@ const cargadosPorPestana = new Set();
 
 // --- Utilidades -----------------------------------------------------------------
 
+// Códigos que el servidor devuelve solo cuando la importación no se aplicó.
+const CODIGOS_IMPORTACION_NO_APLICADA = new Set([
+  "archivo_ausente", "archivo_no_legible", "estructura_incompatible",
+  "catalogo_vacio", "error_escritura", "error_interno",
+]);
+
+function errorResultadoDesconocido(mensaje) {
+  const error = new Error(mensaje);
+  error.resultadoDesconocido = true;
+  return error;
+}
+
 async function pedir(ruta, opciones = {}) {
   let respuesta;
   try {
     respuesta = await fetch(API + ruta, opciones);
   } catch {
-    throw new Error("No se pudo conectar con el servidor.");
+    throw errorResultadoDesconocido("No se pudo conectar con el servidor.");
   }
   let datos = null;
   try {
     datos = await respuesta.json();
   } catch {
-    // La respuesta no era JSON; se usa el mensaje genérico de abajo.
+    datos = null;
   }
   if (!respuesta.ok) {
     const error = new Error((datos && datos.mensaje) || `Error ${respuesta.status} al consultar la API.`);
     error.codigo = datos && datos.codigo;
+    // Solo un código conocido demuestra que el servidor decidió no aplicar la importación.
+    error.resultadoDesconocido = !CODIGOS_IMPORTACION_NO_APLICADA.has(error.codigo);
     throw error;
   }
+  if (datos === null) throw errorResultadoDesconocido("El servidor respondió con un formato no reconocido.");
   return datos;
 }
 
@@ -310,8 +325,13 @@ async function recargarDatos() {
     mostrarResultadoImportacion("ok", `Importación correcta. Cargados: ${JSON.stringify(resumen.cargados)}. Conflictos: ${resumen.conflictos}.`);
     cargadosPorPestana.clear();
   } catch (error) {
-    const codigo = error.codigo ? ` (${error.codigo})` : "";
-    mostrarResultadoImportacion("error", `La importación falló${codigo}: ${error.message} Se conservaron los datos anteriores.`);
+    if (error.resultadoDesconocido) {
+      mostrarResultadoImportacion("error",
+        "No se pudo confirmar el resultado de la importación. Consulte la última importación antes de repetirla.");
+    } else {
+      mostrarResultadoImportacion("error",
+        `La importación no se aplicó (${error.codigo}): ${error.message} Se conservaron los datos anteriores.`);
+    }
   } finally {
     boton.disabled = false;
     await cargarCalidad().catch((error) => mostrarEstado("calidad", "error", error.message));

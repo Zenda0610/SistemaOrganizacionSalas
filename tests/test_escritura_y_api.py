@@ -29,6 +29,7 @@ class PruebasEscritura(BasePrueba):
 
         self.assertFalse(resultado["ok"])
         self.assertEqual(resultado["error"]["codigo"], "error_escritura")
+        self.assertNotIn("fallo simulado", resultado["error"]["mensaje"])
         self.assertEqual(self.aforo("E01"), 99)            # el espacio insertado antes se revirtió
         self.assertEqual(self.contar("espacios"), 10)
         self.assertEqual(self.contar("sesiones"), 37)
@@ -79,6 +80,15 @@ class PruebasApi(BasePrueba):
 
         self.assertFalse(calidad["ultima_importacion"]["exito"])
         self.assertEqual(calidad["ultima_importacion"]["codigo"], "archivo_ausente")
+
+    def test_error_inesperado_del_servidor_no_expone_la_excepcion(self):
+        with mock.patch.object(carga_datos, "cargar_datos", side_effect=RuntimeError("secreto interno")):
+            with TestClient(app, raise_server_exceptions=False) as cliente:
+                respuesta = cliente.post("/api/datos/recargar")
+
+        self.assertEqual(respuesta.status_code, 500)
+        self.assertEqual(respuesta.json()["codigo"], "error_interno_servidor")
+        self.assertNotIn("secreto", respuesta.text)
 
 
 if __name__ == "__main__":

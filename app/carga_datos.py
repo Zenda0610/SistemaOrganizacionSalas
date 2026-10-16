@@ -186,7 +186,7 @@ def _leer_filas(archivo: str) -> list:
     """Devuelve (número_de_línea, datos) de cada fila. Lanza ErrorImportacion si el archivo no sirve."""
     ruta = Path(config.RUTA_DATOS) / archivo
     if not ruta.exists():
-        raise ErrorImportacion("archivo_ausente", archivo, f"no se encontró {archivo} en {config.RUTA_DATOS}")
+        raise ErrorImportacion("archivo_ausente", archivo, f"no se encontró {archivo}")
     try:
         with open(ruta, newline="", encoding="utf-8-sig") as archivo_abierto:
             lector = csv.DictReader(archivo_abierto)
@@ -200,7 +200,9 @@ def _leer_filas(archivo: str) -> list:
                 for numero, fila in enumerate(lector)
             ]
     except (OSError, csv.Error, UnicodeDecodeError) as error:
-        raise ErrorImportacion("archivo_no_legible", archivo, f"no se pudo leer {archivo}: {error}") from error
+        logger.warning("No se pudo leer %s: %s", archivo, error)
+        raise ErrorImportacion("archivo_no_legible", archivo,
+                               f"no se pudo leer {archivo}; guárdelo con codificación UTF-8") from error
 
 
 def _rechazo(archivo: str, fila: int, datos: dict, motivo: str) -> dict:
@@ -341,6 +343,10 @@ TABLAS_POR_ARCHIVO = ((ARCHIVO_ESPACIOS, "espacios"), (ARCHIVO_SESIONES, "sesion
 def _validar_todo() -> dict:
     """Valida los tres archivos antes de tocar la base. Un archivo obligatorio roto detiene todo."""
     espacios = _validar_archivo(ARCHIVO_ESPACIOS, _validar_espacio, lambda m: m.id)
+    if not espacios["validos"]:
+        # Sin espacios, las sesiones y cohortes no tendrían a qué referirse.
+        raise ErrorImportacion("catalogo_vacio", ARCHIVO_ESPACIOS,
+                               f"{ARCHIVO_ESPACIOS} no tiene ningún espacio válido")
     ids_espacios = {item["modelo"].id for item in espacios["validos"]}
     return {
         ARCHIVO_ESPACIOS: espacios,
@@ -380,17 +386,17 @@ def _importar() -> dict:
         validados = _validar_todo()
     except ErrorImportacion as error:
         return {"ok": False, "error": error.a_dict()}
-    except Exception as error:  # un fallo inesperado no debe tumbar la aplicación
+    except Exception:  # un fallo inesperado no debe tumbar la aplicación
         logger.exception("Error inesperado al validar la importación")
         return {"ok": False, "error": ErrorImportacion(
-            "error_interno", None, f"Error inesperado al validar los datos: {error}").a_dict()}
+            "error_interno", None, "Error inesperado al validar los datos").a_dict()}
     try:
         with db.transaccion() as con:
             conflictos = _escribir(con, validados)
     except Exception as error:  # la transacción ya revirtió el reemplazo
-        logger.exception("Error al escribir la importación")
+        logger.exception("Error al escribir la importación: %s", error)
         return {"ok": False, "error": ErrorImportacion("error_escritura", None,
-                                                    f"No se pudo guardar la importación: {error}").a_dict()}
+                                                    "No se pudo guardar la importación").a_dict()}
     return _resumen(validados, conflictos)
 
 

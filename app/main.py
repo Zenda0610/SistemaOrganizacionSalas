@@ -49,7 +49,7 @@ async def manejar_error_validacion(_request, _error: RequestValidationError):
 @app.exception_handler(Exception)
 async def manejar_error_general(_request, error: Exception):
     logger.exception("Error no controlado: %s", error)
-    return JSONResponse(status_code=500, content={"mensaje": "Error interno del servidor. Revise el registro de la aplicación."})
+    return JSONResponse(status_code=500, content={"mensaje": "Error interno del servidor.", "codigo": "error_interno_servidor"})
 
 
 # --- API de lectura ------------------------------------------------------------
@@ -108,6 +108,7 @@ CODIGOS_HTTP_IMPORTACION = {
     "estructura_incompatible": 422,
     "error_escritura": 500,
     "error_interno": 500,
+    "catalogo_vacio": 422,
 }
 
 

@@ -39,6 +39,9 @@ El sistema centraliza espacios, sesiones (clases, reuniones y alquileres), cohor
 - Los solapamientos, los aforos excedidos y las cohortes vencidas se cargan y se marcan como conflictos. No se rechazan.
 - Una importación reemplaza la carga anterior solo si los tres archivos obligatorios existen, se pueden leer y tienen las columnas requeridas. Si algo de eso falla, la base queda como estaba.
 - Cada intento de importación queda registrado en la tabla `importaciones`, también cuando falla.
+- `espacios.csv` sin filas válidas se rechaza (`catalogo_vacio`) y conserva los datos anteriores. Las sesiones y las cohortes vacías, en cambio, son válidas.
+- Los detalles técnicos de un error (rutas, excepciones) solo van al log del servidor. La API responde con un mensaje general y un código.
+- La interfaz distingue dos casos. Un código de error confirmado indica que la importación no se aplicó y que se conservaron los datos anteriores. Un fallo de red o una respuesta no interpretable significa que el resultado es desconocido: la interfaz pide consultar la última importación antes de repetirla.
 - El arranque de la aplicación no importa datos. La importación es explícita.
 
 ### Reglas de negocio (fase 2, pendientes)
@@ -80,7 +83,10 @@ Abre `http://127.0.0.1:8000`. El host `127.0.0.1` evita que otros equipos de la 
 
 ```bash
 python -m unittest discover -s tests -t .
+node tests/test_interfaz.js
 ```
+
+`test_interfaz.js` requiere Node.js y no usa navegador: simula el DOM y las respuestas de `fetch`.
 
 **Variables de entorno:** todas son opcionales. Están documentadas en `.env.example`. Los valores vacíos usan los valores por defecto de `app/config.py`.
 </content>

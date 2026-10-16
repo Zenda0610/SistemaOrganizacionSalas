@@ -69,6 +69,36 @@ class PruebasValidacionAntesDeReemplazar(BasePrueba):
         self.assertEqual(resultado["error"]["codigo"], "error_interno")
         self.afirmar_datos_intactos()
 
+    def test_espacios_sin_filas_validas_conserva_datos(self):
+        ruta = self.carpeta_datos / "espacios.csv"
+        ruta.write_text(ruta.read_text(encoding="utf-8").splitlines()[0] + "\n", encoding="utf-8")
+
+        resultado = carga_datos.cargar_datos()
+
+        self.assertFalse(resultado["ok"])
+        self.assertEqual(resultado["error"]["codigo"], "catalogo_vacio")
+        self.afirmar_datos_intactos()
+
+    def test_sesiones_vacias_si_son_validas(self):
+        ruta = self.carpeta_datos / "sesiones.csv"
+        ruta.write_text(ruta.read_text(encoding="utf-8").splitlines()[0] + "\n", encoding="utf-8")
+
+        resultado = carga_datos.cargar_datos()
+
+        self.assertTrue(resultado["ok"])
+        self.assertEqual(self.contar("sesiones"), 0)
+        self.assertEqual(self.contar("espacios"), 10)
+
+    def test_mensajes_de_error_no_revelan_rutas_ni_excepciones(self):
+        (self.carpeta_datos / "sesiones.csv").unlink()
+        ausente = carga_datos.cargar_datos()["error"]["mensaje"]
+        self.assertNotIn(str(self.carpeta_datos), ausente)
+
+        (self.carpeta_datos / "sesiones.csv").write_bytes(b"\xff\xfe\x00\x81")
+        no_legible = carga_datos.cargar_datos()["error"]["mensaje"]
+        self.assertNotIn("codec", no_legible.lower())
+        self.assertNotIn("utf-8'", no_legible.lower())
+
 
 if __name__ == "__main__":
     import unittest
